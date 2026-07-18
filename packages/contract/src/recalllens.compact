@@ -1,0 +1,380 @@
+// RecallLens — privacy-preserving food-outbreak traceback network.
+//
+// Goal: let independently-registered supply-chain organizations prove, in zero
+// knowledge, that they hold a committed trace event that is relevant to a public
+// outbreak case — WITHOUT revealing which event, which organization, or any of
+// the raw event fields. When enough distinct registered organizations converge on
+// the SAME hidden lineage token for a case, the case's convergence flag flips,
+// signalling a likely common source.
+//
+// Privacy model (what an on-chain observer CAN vs CANNOT see):
+//   CAN see:  registered org commitments (opaque hashes), event commitments
+//             (opaque, leaf-hashed inside a Merkle tree), public case definitions,
+//             per-caseTag match counts, org nullifiers, convergence flags, and
+//             that some Merkle-membership proof passed.
+//   CANNOT see: which committed event matched, which registered org proved,
+//             the org secret, the lineage token, the blinding factor, or the
+//             exact event time (only that it fell inside the public window).
+//
+// The ONLY values disclosed by proveRelevantEvent are:
+//   - caseId          (public argument; the case being proven against)
+//   - caseTag         = H("rl:tag:v1", caseId, lineageToken)  — hash of a 256-bit
+//                       random lineage token, so no dictionary attack is feasible
+//   - orgNullifier    = H("rl:null:v1", caseId, orgSecret)    — hash of the org's
+//                       high-entropy credential secret
+//   - the two Merkle ROOTS (Bytes<32> digests, leaf-independent — they prove
+//     membership without revealing WHICH leaf matched), plus a set of booleans
+//     (all necessarily `true` when the tx succeeds): the path/leaf bindings, the
+//     product-predicate match, and the event-time window bounds. None of these
+//     reveal which leaf matched or the exact event time.
+//
+// Admission is registrar-gated: registerOrganization / openCase / closeCase
+// require the caller to prove knowledge of the deploy-time registrar credential
+// secret in-circuit (see the REGISTRAR AUTHORITY section and the SECURITY NOTES
+// block at the bottom). proveRelevantEvent stays open to any registered org.
+
+pragma language_version >= 0.23;
+
+import CompactStandardLibrary;
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+// Off-chain trace-event fields, provided by the prover's witness. These never
+// reach the ledger; only a commitment over them is ever stored.
+//   - lineageToken: high-entropy random Bytes<32> propagated through a synthetic
+//                   supply chain. Shared lineage across orgs is what convergence
+//                   detects. Being 256-bit random defeats dictionary attacks on
+//                   the derived caseTag.
+//   - productHash:  hash of the product/predicate this event pertains to.
+//   - eventTime:    Unix-seconds timestamp of the event.
+//   - blinding:     per-event random blinding so identical (lineage, product,
+//                   time) events still produce distinct commitments.
+export struct TraceEvent {
+  lineageToken: Bytes<32>;
+  productHash: Bytes<32>;
+  eventTime: Uint<64>;
+  blinding: Bytes<32>;
+}
+
+// Public case definition, recorded by openCase. Every field is intentionally
+// public — a case is an official, published outbreak investigation.
+export struct CaseInfo {
+  sourceHash: Bytes<32>; // hash of the official CDC source snapshot
+  productHash: Bytes<32>; // product predicate an event must match
+  windowStart: Uint<64>; // inclusive lower bound on event time
+  windowEnd: Uint<64>; // inclusive upper bound on event time
+  open: Boolean; // whether the case still accepts proofs
+}
+
+// ============================================================================
+// LEDGER STATE (kept minimal)
+// ============================================================================
+
+// Registered organization credential commitments.
+// HistoricMerkleTree so that (a) inserting hides the commitment behind leaf_hash,
+// and (b) proving membership in-circuit does NOT reveal WHICH registered org is
+// proving, and (c) proofs stay valid after later registrations change the root.
+// Depth 10 => up to 1024 registered organizations.
+export ledger orgRegistry: HistoricMerkleTree<10, Bytes<32>>;
+
+// Trace-event commitment tree. REQUIRED to be a Merkle tree: the membership proof
+// must not reveal which committed event matched. Historic variant so a proof
+// stays valid after new events are committed. Depth 10 => up to 1024 events.
+export ledger eventTree: HistoricMerkleTree<10, Bytes<32>>;
+
+// Public case definitions, keyed by caseId.
+export ledger cases: Map<Bytes<32>, CaseInfo>;
+
+// Per-caseTag count of verified, distinct-org matches.
+export ledger matchCount: Map<Bytes<32>, Counter>;
+
+// Spent org nullifiers. Public by design: this is what stops one registered
+// credential from counting twice for the same case. Unlinkable across cases
+// because the nullifier is domain-separated by caseId.
+export ledger orgNullifiers: Set<Bytes<32>>;
+
+// caseTag -> converged?  Absence is treated as `false`; a `true` entry is written
+// once the match count for that tag reaches the threshold.
+export ledger converged: Map<Bytes<32>, Boolean>;
+
+// Convergence threshold (distinct orgs required). Set once at deployment; the
+// design target is 3.
+export sealed ledger threshold: Uint<64>;
+
+// Public commitment to the registrar credential secret, pinned at deploy. The
+// admission circuits recompute deriveRegistrarCommitment(getRegistrarSecret())
+// in-circuit and require it to equal this value, so only the holder of the
+// registrar secret can register orgs or open/close cases. Public by design (it
+// is a hash of a high-entropy secret; the secret itself never reaches the chain).
+export sealed ledger registrarCommitment: Bytes<32>;
+
+// ============================================================================
+// WITNESSES (off-chain, private, untrusted-by-the-contract inputs)
+// ============================================================================
+
+// The prover's registered organization credential secret.
+witness getOrgSecret(): Bytes<32>;
+
+// The registrar/coordinator credential secret, held only by the deployer. Used
+// by the admission circuits (registerOrganization / openCase / closeCase) to
+// prove the caller is the registrar. Never disclosed; only its commitment is
+// public (pinned at deploy in registrarCommitment).
+witness getRegistrarSecret(): Bytes<32>;
+
+// The raw trace event the prover claims to hold.
+witness getTraceEvent(): TraceEvent;
+
+// Merkle authentication path for a given event commitment (built off-chain from
+// the current event tree). Returns the path whose `.leaf` is the raw commitment.
+witness getEventPath(commitment: Bytes<32>): MerkleTreePath<10, Bytes<32>>;
+
+// Merkle authentication path for a given org commitment.
+witness getOrgPath(orgCommitment: Bytes<32>): MerkleTreePath<10, Bytes<32>>;
+
+// ============================================================================
+// DOMAIN-SEPARATED DERIVATIONS
+// ============================================================================
+// Each derivation uses a distinct domain-separation prefix so that no value can
+// be transformed into another (e.g. a nullifier cannot be turned into a caseTag,
+// and an event commitment cannot be correlated with an org commitment).
+// All are `export`ed and `pure` so the off-chain client and the test harness can
+// recompute the exact same values.
+
+// eventCommitment = H("rl:event:v1", lineageToken, productHash, eventTime, blinding)
+export pure circuit deriveEventCommitment(
+                      lineageToken: Bytes<32>,
+                      productHash: Bytes<32>,
+                      eventTime: Uint<64>,
+                      blinding: Bytes<32>
+                      ): Bytes<32> {
+  return persistentHash<Vector<5, Bytes<32>>>(
+           [pad(32, "rl:event:v1"),
+            lineageToken,
+            productHash,
+            (eventTime as Field) as Bytes<32>,
+            blinding]
+           );
+}
+
+// orgCommitment = H("rl:org:v1", orgSecret)
+export pure circuit deriveOrgCommitment(orgSecret: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "rl:org:v1"), orgSecret]);
+}
+
+// caseTag = H("rl:tag:v1", caseId, lineageToken)
+export pure circuit deriveCaseTag(caseId: Bytes<32>, lineageToken: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<3, Bytes<32>>>([pad(32, "rl:tag:v1"), caseId, lineageToken]);
+}
+
+// orgNullifier = H("rl:null:v1", caseId, orgSecret)
+export pure circuit deriveOrgNullifier(caseId: Bytes<32>, orgSecret: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<3, Bytes<32>>>([pad(32, "rl:null:v1"), caseId, orgSecret]);
+}
+
+// registrarCommitment = H("rl:registrar:v1", registrarSecret)
+export pure circuit deriveRegistrarCommitment(registrarSecret: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "rl:registrar:v1"), registrarSecret]);
+}
+
+// ============================================================================
+// CONSTRUCTOR
+// ============================================================================
+
+constructor(convergenceThreshold: Uint<64>, registrarCommitment_: Bytes<32>) {
+  // Constructor params are witness-tainted; both are intentionally public.
+  // registrarCommitment_ is a hash of the registrar secret, computed client-side
+  // via deriveRegistrarCommitment; the secret itself never reaches the chain.
+  threshold = disclose(convergenceThreshold);
+  registrarCommitment = disclose(registrarCommitment_);
+}
+
+// Registrar admission gate. Recomputes the registrar commitment from the caller's
+// witness-held registrar secret and requires it to equal the deploy-time pinned
+// commitment. The secret is NOT disclosed (only the equality boolean is), so an
+// observer learns only that the caller is/ isn't the registrar. Called by every
+// admission circuit (registerOrganization / openCase / closeCase).
+circuit assertRegistrar(): [] {
+  const rs = getRegistrarSecret();
+  assert(disclose(deriveRegistrarCommitment(rs) == registrarCommitment), "Not the registrar");
+}
+
+// ============================================================================
+// CIRCUITS
+// ============================================================================
+
+// Register an organization by inserting its opaque credential commitment.
+// The commitment is computed client-side as deriveOrgCommitment(orgSecret); the
+// contract never sees the org secret. Registrar-gated: only the registrar may
+// admit organizations, which is what prevents Sybil convergence inflation (one
+// entity registering many credentials). See the SECURITY NOTES block below.
+export circuit registerOrganization(orgCommitment: Bytes<32>): [] {
+  assertRegistrar();
+  orgRegistry.insert(disclose(orgCommitment));
+}
+
+// Commit a trace event by inserting its opaque commitment into the event tree.
+// The commitment is computed client-side as deriveEventCommitment(...); the raw
+// event fields never touch the chain here. NOT registrar-gated: committing an
+// opaque event leaf is harmless on its own — it only becomes a convergence
+// signal when a REGISTERED org proves relevance to a case, and both registration
+// and case-opening are registrar-gated.
+export circuit commitTraceEvent(eventCommitment: Bytes<32>): [] {
+  eventTree.insert(disclose(eventCommitment));
+}
+
+// Record a public case definition. All fields are public. Registrar-gated: only
+// the registrar may open cases, preventing bogus-case spam that could dilute or
+// fabricate convergence signals.
+export circuit openCase(
+                 caseId: Bytes<32>,
+                 sourceHash: Bytes<32>,
+                 productHash: Bytes<32>,
+                 windowStart: Uint<64>,
+                 windowEnd: Uint<64>
+                 ): [] {
+  assertRegistrar();
+  const cid = disclose(caseId);
+  assert(!cases.member(cid), "Case already exists");
+  assert(disclose(windowStart <= windowEnd), "Invalid window: start after end");
+  cases.insert(
+    cid,
+    disclose(CaseInfo { sourceHash: sourceHash,
+                        productHash: productHash,
+                        windowStart: windowStart,
+                        windowEnd: windowEnd,
+                        open: true })
+    );
+}
+
+// Administrative close so a case stops accepting proofs. Registrar-gated.
+export circuit closeCase(caseId: Bytes<32>): [] {
+  assertRegistrar();
+  const cid = disclose(caseId);
+  assert(cases.member(cid), "Unknown case");
+  const c = cases.lookup(cid);
+  cases.insert(
+    cid,
+    CaseInfo { sourceHash: c.sourceHash,
+               productHash: c.productHash,
+               windowStart: c.windowStart,
+               windowEnd: c.windowEnd,
+               open: false }
+    );
+}
+
+// THE CORE ZK CIRCUIT.
+//
+// The prover demonstrates, in zero knowledge, that:
+//   (a) they hold a trace event committed to the event tree,
+//   (b) they hold a registered organization credential,
+//   (c) that event satisfies the public case's product predicate and time window,
+// and in doing so contributes exactly one distinct-org match to the case's hidden
+// lineage tag. Convergence is folded in here (a separate recordConvergence circuit
+// would be redundant since the count only ever changes on this path).
+export circuit proveRelevantEvent(caseId: Bytes<32>): [] {
+  // caseId is a public argument (intentionally disclosed — it identifies the case).
+  const cid = disclose(caseId);
+  assert(cases.member(cid), "Unknown case");
+  const c = cases.lookup(cid);
+  assert(c.open, "Case is closed");
+
+  // --- (a) Recompute the event commitment and prove tree membership. ---
+  const ev = getTraceEvent();
+  const eventCommitment =
+          deriveEventCommitment(ev.lineageToken, ev.productHash, ev.eventTime, ev.blinding);
+  const eventPath = getEventPath(eventCommitment);
+  // Bind the supplied path to the commitment WE derived from the witness fields.
+  // Without this, a malicious witness could hand back a valid path for some OTHER
+  // committed event (passing checkRoot) while tampering the event fields. This
+  // binding is what makes tamper-detection and not-committed-detection enforced
+  // in-circuit rather than relying on an honest witness.
+  assert(disclose(eventPath.leaf == eventCommitment),
+         "Event path does not match the committed event"
+         );
+  // Disclosing only the ROOT (leaf-independent) proves membership without
+  // revealing which leaf matched.
+  assert(eventTree.checkRoot(disclose(merkleTreePathRoot<10, Bytes<32>>(eventPath))),
+         "Event is not committed in the event tree"
+         );
+
+  // --- (b) Recompute the org commitment and prove registry membership. ---
+  const orgSecret = getOrgSecret();
+  const orgCommitment = deriveOrgCommitment(orgSecret);
+  const orgPath = getOrgPath(orgCommitment);
+  assert(disclose(orgPath.leaf == orgCommitment), "Org path does not match the org credential");
+  assert(orgRegistry.checkRoot(disclose(merkleTreePathRoot<10, Bytes<32>>(orgPath))),
+         "Organization is not registered"
+         );
+
+  // --- (c) Enforce the public case predicate against the private event. ---
+  // Each disclosed boolean is necessarily `true` on success; none reveal the
+  // hidden field values (only that the product matched and the time fell in range).
+  assert(disclose(ev.productHash == c.productHash), "Product predicate mismatch");
+  assert(disclose(ev.eventTime >= c.windowStart), "Event time before case window");
+  assert(disclose(ev.eventTime <= c.windowEnd), "Event time after case window");
+
+  // --- (d) Derive and disclose the caseTag (the only lineage-linked public value). ---
+  const caseTag = disclose(deriveCaseTag(cid, ev.lineageToken));
+
+  // --- (e) Derive and disclose the org nullifier; enforce single-use per case. ---
+  const nullifier = disclose(deriveOrgNullifier(cid, orgSecret));
+  assert(!orgNullifiers.member(nullifier), "Organization already counted for this case");
+  orgNullifiers.insert(nullifier);
+
+  // --- (f) Increment the match count for this tag; flip convergence at threshold. ---
+  if (!matchCount.member(caseTag)) {
+    matchCount.insert(caseTag, default<Counter>);
+  }
+  matchCount.lookup(caseTag).increment(1);
+  if (matchCount.lookup(caseTag).read() >= threshold) {
+    converged.insert(caseTag, true);
+  }
+}
+
+// ============================================================================
+// SECURITY NOTES
+// ============================================================================
+//
+// Trust anchor — the registrar. registerOrganization, openCase, and closeCase
+//   are gated on assertRegistrar(): the caller must prove knowledge (in zero
+//   knowledge) of the deploy-time registrar credential secret whose commitment
+//   is pinned in `registrarCommitment`. This is what prevents Sybil convergence
+//   inflation — a single entity cannot register 3+ credentials or open bogus
+//   cases to fabricate a convergence signal. The registrar is the credentialing
+//   authority for the network.
+//
+// Residual registrar trust. A MALICIOUS or compromised registrar could still
+//   admit colluding organizations (distinct credentials it controls) and thereby
+//   manufacture convergence. This is the same trust placed in any credentialing
+//   authority (e.g. a CA, a KYC provider): the gate stops anonymous Sybils, not a
+//   dishonest registrar. Mitigations if stronger guarantees are needed: split the
+//   registrar across an M-of-N committee, publish the registration log for public
+//   audit, or require orgs to present externally-verifiable credentials
+//   (e.g. a signed attestation) at registration time.
+//
+// Anonymity set. proveRelevantEvent discloses only leaf-independent Merkle ROOTS
+//   (via HistoricMerkleTree.checkRoot), never which leaf matched. Privacy of
+//   "which org / which event" is therefore only as strong as the number of
+//   registered orgs / committed events. With a very small set, timing and count
+//   correlation can narrow it. Additionally, because HistoricMerkleTree accepts
+//   proofs against PAST roots, a prover who proves against a stale root reveals
+//   that their leaf existed as of an earlier, smaller tree — which can shrink the
+//   effective anonymity set. Clients should prove against the most recent root
+//   available. Seed a healthy anonymity set before treating convergence as strong
+//   evidence.
+//
+// Nullifier scope. orgNullifier = H("rl:null:v1", caseId, orgSecret) is
+//   per-credential AND per-case: it stops one registered credential from counting
+//   twice for the SAME case, while remaining unlinkable across different cases
+//   (distinct caseId => uncorrelatable nullifier). It does NOT stop two DIFFERENT
+//   credentials — that is the registrar's job (above).
+//
+// Demo fixtures. Any org/registrar secrets shipped as demonstration fixtures are
+//   PUBLIC (in source / test files) and provide no security. Production
+//   deployments must generate high-entropy secrets held privately by each org and
+//   by the registrar/deployer.
+//
+// commitTraceEvent is intentionally NOT registrar-gated: an opaque event leaf is
+//   inert until a registered org proves it relevant to a registrar-opened case.

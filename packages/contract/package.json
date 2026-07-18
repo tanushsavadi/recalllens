@@ -1,0 +1,20 @@
+{
+  "name": "@recalllens/contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "RecallLens Compact contract — privacy-preserving food-outbreak traceback.",
+  "main": "src/index.ts",
+  "scripts": {
+    "compile": "compact compile src/recalllens.compact src/managed/recalllens",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@midnight-ntwrk/compact-runtime": "0.16.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
