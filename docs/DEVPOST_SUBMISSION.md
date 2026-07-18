@@ -1,8 +1,9 @@
 # RecallLens — Devpost Submission
 
 ## Tagline
-Find the source, not the secrets. Privacy-preserving food-outbreak traceback on
-Midnight.
+Find the source, not the secrets. Privacy-preserving food-safety network on
+Midnight: detect early, verify privately, contain quickly, trace precisely,
+warn consumers, prove removal.
 
 ## Inspiration
 Every foodborne-outbreak headline hides the same bottleneck: traceback. When the
@@ -93,3 +94,23 @@ capture; an investigator MCP with human-confirmation gates.
 ## Try it
 `npm install && npm run compile:contract && npm run demo:seed && npm run demo:api`
 then `npm run dev:web`. Reproduce the genuine proof with `npm run e2e:onchain`.
+
+## Product rework additions (final build)
+
+- **RecallLens Sentinel** — early-warning layer with genuine Compact circuits:
+  independent orgs privately prove safety signals (QA / cold-chain / exposure
+  cluster) against the same hidden lineage; a transparent threshold (3 signals,
+  3 orgs by nullifier construction, ≥2 categories, ≥1 high-confidence) opens a
+  confidential case and a Midnight-anchored precautionary hold. Labeled a
+  synthetic pre-outbreak replay — never an outbreak prediction.
+- **Role-separated workflow** — investigators request; partners scan their own
+  shipment labels and approve their own proofs; consumers only verify. Enforced
+  server-side (tested 403/404 guards).
+- **Consumer Recall Intelligence** — six explicit evidence levels over real FDA
+  advisory pages (live-or-cached with provenance), Midnight-anchored holds and
+  authorized recalls; every result ships an evidence receipt. Includes a real
+  official-recall test card (GreenWise frozen blueberries, lot 60401).
+- **Signed Product Passports** — ECDSA P-256 GS1 Digital Link labels; tampering
+  is detected and surfaced.
+- **Encrypted minimum disclosure** — field-by-field approval, in-browser
+  ECDH+AES-GCM; only ciphertext transits.
