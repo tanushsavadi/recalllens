@@ -1,0 +1,30 @@
+{
+  "name": "recalllens",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "RecallLens — privacy-preserving food-outbreak traceback on Midnight. Find the source, not the secrets.",
+  "workspaces": [
+    "packages/*",
+    "apps/*",
+    "e2e"
+  ],
+  "scripts": {
+    "compile:contract": "npm run compile -w @recalllens/contract",
+    "test:contract": "npm run test -w @recalllens/contract",
+    "test": "npm run test --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "dev:web": "npm run dev -w @recalllens/web",
+    "demo:api": "RECALLLENS_USE_LIVE=1 npm run start -w @recalllens/public-data-api",
+    "demo:seed": "npm run deploy-and-seed -w @recalllens/midnight-client -- --presubmit 2",
+    "demo:reset": "rm -f .recalllens-deployment.json .midnight-state.json && rm -rf .midnight-wallet-state levelDb && echo 'demo state cleared — run demo:seed to redeploy'",
+    "e2e:onchain": "npm run e2e-convergence -w @recalllens/midnight-client",
+    "e2e": "npm run test -w @recalllens/e2e",
+    "devnet:up": "docker compose -p midnight-devnet -f ~/.midnight-expert/devnet/devnet.yml up -d",
+    "devnet:down": "docker compose -p midnight-devnet down",
+    "health": "node scripts/health-check.mjs"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}
