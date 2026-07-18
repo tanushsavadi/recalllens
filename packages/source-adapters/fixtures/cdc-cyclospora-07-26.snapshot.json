@@ -1,0 +1,24 @@
+{
+  "source": "cached-snapshot",
+  "sourceUrl": "https://www.cdc.gov/cyclosporiasis/outbreaks/07-26/index.html",
+  "retrievedAt": "2026-07-18T03:34:30Z",
+  "contentSha256": "846e4b72430b4348f1f048034a635f3a87a4cf89d70cd4037a66cb7f7e093127",
+  "parserVersion": "cdc-cyclospora-parser@1.0.0",
+  "outbreak": {
+    "title": "Cyclospora Outbreak Linked to Shredded Iceberg Lettuce Served at Taco Bell in 5 States",
+    "pathogen": "Cyclospora",
+    "cases": 1644,
+    "hospitalizations": 94,
+    "deaths": 0,
+    "states": [
+      "Indiana",
+      "Kentucky",
+      "Michigan",
+      "Ohio",
+      "West Virginia"
+    ],
+    "investigationStatus": "Open",
+    "officialLastUpdated": "July 17, 2026",
+    "implicatedFood": "Shredded iceberg lettuce"
+  }
+}
