@@ -1,0 +1,246 @@
+@import url("https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@500;600;700&display=swap");
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─────────────────────────────────────────────────────────────────────────
+   THEME TOKENS — dark (default) + light. Everything reads from these vars so
+   the whole UI flips with one attribute on <html>.
+   ───────────────────────────────────────────────────────────────────────── */
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg-0: #000000;          /* AMOLED true black */
+  --bg-1: #050608;
+  --bg-2: #0b0d12;
+  --text-hi: #f6f8ff;       /* primary text */
+  --text-mid: #aeb6c9;      /* secondary */
+  --text-lo: #6f7889;       /* tertiary */
+  --line: rgba(255, 255, 255, 0.09);
+  --line-strong: rgba(255, 255, 255, 0.16);
+
+  /* glass — tuned for true-black so refraction/blur reads clearly */
+  --glass-fill: rgba(255, 255, 255, 0.045);
+  --glass-fill-strong: rgba(255, 255, 255, 0.075);
+  --glass-border: rgba(255, 255, 255, 0.12);
+  --glass-hi: rgba(255, 255, 255, 0.22);   /* top inset highlight */
+  --glass-shadow: rgba(0, 0, 0, 0.7);
+  --glass-blur: 26px;
+
+  /* brand + semantics (consistent across themes) */
+  --verified: #34e39b;
+  --verified-fg: #7ff0c1;
+  --amber: #ffb545;
+  --outbreak: #ff5c52;
+  --accent: #7cc0ff;        /* electric cyan-blue for interactive accents */
+  --globe-veil: rgba(0, 0, 0, 0);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg-0: #eef2fa;
+  --bg-1: #e6ecf7;
+  --bg-2: #dde5f2;
+  --text-hi: #0c1426;
+  --text-mid: #384561;
+  --text-lo: #66748f;
+  --line: rgba(12, 20, 38, 0.10);
+  --line-strong: rgba(12, 20, 38, 0.18);
+
+  --glass-fill: rgba(255, 255, 255, 0.55);
+  --glass-fill-strong: rgba(255, 255, 255, 0.75);
+  --glass-border: rgba(255, 255, 255, 0.7);
+  --glass-hi: rgba(255, 255, 255, 0.9);
+  --glass-shadow: rgba(20, 34, 66, 0.18);
+  --glass-blur: 18px;
+
+  --verified: #0f9d63;
+  --verified-fg: #0c5c38;
+  --amber: #c77900;
+  --outbreak: #d0392e;
+  --accent: #2f6bff;
+  --globe-veil: rgba(255, 255, 255, 0.0);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    sans-serif;
+  color: var(--text-hi);
+  background: var(--bg-0);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Ambient aurora behind the app (subtle, theme-aware). */
+.app-aurora {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(60% 45% at 78% 12%, color-mix(in oklab, var(--accent) 22%, transparent), transparent 70%),
+    radial-gradient(50% 40% at 12% 88%, color-mix(in oklab, var(--verified) 16%, transparent), transparent 70%),
+    radial-gradient(40% 30% at 50% 50%, color-mix(in oklab, var(--outbreak) 8%, transparent), transparent 70%);
+  filter: saturate(1.1);
+}
+
+@layer components {
+  /* LIQUID GLASS — translucent fill, blur+saturate, gradient border via mask,
+     top highlight + soft drop shadow. Refraction hint via a faint inner ring. */
+  .glass {
+    position: relative;
+    background: var(--glass-fill);
+    backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+    border: 1px solid var(--glass-border);
+    border-radius: 20px;
+    box-shadow:
+      0 1px 0 0 var(--glass-hi) inset,
+      0 -1px 0 0 rgba(0, 0, 0, 0.12) inset,
+      0 18px 50px -12px var(--glass-shadow);
+  }
+  .glass-strong {
+    background: var(--glass-fill-strong);
+  }
+  /* gradient sheen along the top edge of a glass surface */
+  .glass::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(
+      140deg,
+      var(--glass-hi),
+      transparent 40%,
+      transparent 60%,
+      rgba(255, 255, 255, 0.06)
+    );
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+
+  .pill {
+    border-radius: 9999px;
+  }
+
+  .stat-value {
+    font-family: "Space Grotesk", "Geist", sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat-label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-lo);
+  }
+  /* Fraunces serif for premium editorial display headings. */
+  .display {
+    font-family: "Fraunces", "Space Grotesk", Georgia, serif;
+    letter-spacing: -0.015em;
+    font-optical-sizing: auto;
+  }
+  .mono {
+    font-family: "IBM Plex Mono", ui-monospace, "SF Mono", monospace;
+  }
+  .eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.6875rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--text-lo);
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    border-radius: 9999px;
+    padding: 0.2rem 0.65rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    line-height: 1.2;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 9999px;
+    padding: 0.6rem 1.1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    transition: transform 0.15s ease, background 0.2s ease, box-shadow 0.2s ease;
+    cursor: pointer;
+  }
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .btn-primary {
+    background: linear-gradient(180deg, color-mix(in oklab, var(--accent) 92%, white), var(--accent));
+    color: #05070f;
+    box-shadow: 0 8px 24px -8px color-mix(in oklab, var(--accent) 70%, transparent);
+  }
+  .btn-primary:not(:disabled):hover {
+    transform: translateY(-1px);
+    box-shadow: 0 12px 30px -8px color-mix(in oklab, var(--accent) 80%, transparent);
+  }
+  .btn-glass {
+    background: var(--glass-fill);
+    backdrop-filter: blur(12px) saturate(160%);
+    -webkit-backdrop-filter: blur(12px) saturate(160%);
+    border: 1px solid var(--glass-border);
+    color: var(--text-hi);
+  }
+  .btn-glass:not(:disabled):hover {
+    transform: translateY(-1px);
+    border-color: var(--line-strong);
+  }
+
+  .hairline {
+    border-color: var(--line);
+  }
+}
+
+@layer utilities {
+  .text-hi { color: var(--text-hi); }
+  .text-mid { color: var(--text-mid); }
+  .text-lo { color: var(--text-lo); }
+  .text-verified { color: var(--verified); }
+  .text-amber { color: var(--amber); }
+  .text-outbreak { color: var(--outbreak); }
+  .text-accent { color: var(--accent); }
+}
+
+/* Respect reduced motion for all transitions. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* Thin, themed scrollbars on glass panels. */
+.scroll-slim::-webkit-scrollbar { width: 8px; height: 8px; }
+.scroll-slim::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 9999px;
+}
