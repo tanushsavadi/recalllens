@@ -21,6 +21,7 @@ import {
 } from "@midnight-ntwrk/compact-runtime";
 import {
   Ledger,
+  SafetySignal,
   TraceEvent,
 } from "./managed/recalllens/contract/index.js";
 
@@ -35,9 +36,17 @@ import {
 //   - registrarSecret: the 32-byte registrar/coordinator credential secret. Only
 //                      the deployer/registrar holds the real value; it gates the
 //                      admission circuits (registerOrganization / openCase /
-//                      closeCase) via getRegistrarSecret. Org-prover states that
-//                      never administer may leave this as a zero placeholder,
-//                      since proveRelevantEvent does not call getRegistrarSecret.
+//                      closeCase / openSentinelCase / issuePrecautionaryHold /
+//                      authorizeRecallPredicate) via getRegistrarSecret. Org-prover
+//                      states that never administer may leave this as a zero
+//                      placeholder, since proveRelevantEvent / submitSafetySignal
+//                      do not call getRegistrarSecret.
+//   - safetySignal:    (SENTINEL layer, optional) the raw safety signal this prover
+//                      holds. Consumed by getSafetySignal (submitSafetySignal).
+//                      Optional so existing callers that only use the outbreak layer
+//                      keep working; when absent, a zero placeholder is returned and
+//                      the circuit's path/leaf binding rejects it (it matches no
+//                      committed leaf), exactly like an absent trace event.
 //
 // All fields are `readonly`; witnesses return a (possibly new) private-state
 // object alongside their value, but RecallLens witnesses never mutate it.
@@ -45,20 +54,41 @@ export type RecallLensPrivateState = {
   readonly orgSecret: Uint8Array;
   readonly traceEvent: TraceEvent;
   readonly registrarSecret: Uint8Array;
+  readonly safetySignal?: SafetySignal;
 };
 
 // A 32-byte zero placeholder for the registrar secret in non-admin (org-prover)
 // private states. proveRelevantEvent never reads it, so it is inert there.
 const ZERO_32 = new Uint8Array(32);
 
+// A zero-valued SafetySignal placeholder for states that never call
+// submitSafetySignal. Its (all-zero) derived commitment matches no committed leaf,
+// so the circuit's path/leaf binding + checkRoot reject it in-circuit — the same
+// safe-by-default behaviour as an absent trace event.
+const ZERO_SIGNAL: SafetySignal = {
+  lineageToken: ZERO_32,
+  productHash: ZERO_32,
+  signalTime: 0n,
+  category: 0n,
+  blinding: ZERO_32,
+};
+
 // Factory for a fresh private state. `orgSecret` must be exactly 32 bytes.
 // `registrarSecret` defaults to a zero placeholder for org-prover states; supply
 // the real registrar secret only for states used to call the admission circuits.
+// `safetySignal` is optional (SENTINEL layer); omit it for pure outbreak-layer
+// callers. Positional arity is unchanged for existing callers.
 export const createRecallLensPrivateState = (
   orgSecret: Uint8Array,
   traceEvent: TraceEvent,
   registrarSecret: Uint8Array = ZERO_32,
-): RecallLensPrivateState => ({ orgSecret, traceEvent, registrarSecret });
+  safetySignal?: SafetySignal,
+): RecallLensPrivateState => ({
+  orgSecret,
+  traceEvent,
+  registrarSecret,
+  safetySignal,
+});
 
 // Merkle tree depth used by both ledger trees (see recalllens.compact).
 const TREE_DEPTH = 10;
@@ -98,6 +128,19 @@ export const witnesses = {
     context: WitnessContext<Ledger, RecallLensPrivateState>,
   ): [RecallLensPrivateState, TraceEvent] {
     return [context.privateState, context.privateState.traceEvent];
+  },
+
+  // The raw safety signal the prover claims to hold (SENTINEL layer). Returns the
+  // zero placeholder when absent, so the circuit's path/leaf binding + checkRoot
+  // reject it in-circuit (it matches no committed leaf) rather than the witness
+  // throwing — the same enforced-by-the-contract rationale as getEventPath.
+  getSafetySignal(
+    context: WitnessContext<Ledger, RecallLensPrivateState>,
+  ): [RecallLensPrivateState, SafetySignal] {
+    return [
+      context.privateState,
+      context.privateState.safetySignal ?? ZERO_SIGNAL,
+    ];
   },
 
   // The registrar credential secret, consumed by the admission circuits. The

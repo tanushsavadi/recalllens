@@ -26,25 +26,36 @@ export function CommandCenter() {
             {outbreak.data && <PublicSourceBadge live={outbreak.data.live} />}
             <SyntheticBadge />
           </div>
-          <div className="eyebrow mb-2">CDC · {o?.pathogen ?? "Cyclospora"}</div>
-          <h1 className="display text-[1.7rem] font-semibold leading-[1.06] text-hi sm:text-4xl">
-            {o?.title ??
-              "Cyclospora Outbreak Linked to Shredded Iceberg Lettuce"}
+          <h1 className="display text-[1.6rem] font-semibold leading-[1.08] text-hi sm:text-4xl">
+            Detect risk early. Trace it without exposing the supply chain.
           </h1>
           <p className="mt-3 text-[13px] leading-relaxed text-mid sm:text-sm">
-            Independent farms, processors, and distributors prove their private
-            records converge on the same lineage — without publishing any
-            company's supply graph. The globe reflects verified on-chain state.
+            RecallLens combines official recall intelligence with
+            privacy-preserving partner proofs, allowing investigators to contain
+            affected food while companies keep unrelated records private.
           </p>
+          {/* lifecycle strip */}
+          <div className="mt-3 flex flex-wrap items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-lo">
+            {["Detect", "Verify", "Hold", "Trace", "Recall", "Protect"].map((s, i) => (
+              <span key={s} className="flex items-center gap-1">
+                {i > 0 && <span className="text-slate-600">→</span>}
+                <span>{s}</span>
+              </span>
+            ))}
+          </div>
           <div className="mt-4 flex flex-wrap items-center gap-2.5">
-            <Link to="/consumer" className="btn btn-primary">
-              Scan a product & prove →
+            <Link to="/sentinel" className="btn btn-primary">
+              Run Sentinel replay →
             </Link>
-            <Link to="/investigation" className="btn btn-glass">
-              Investigate
+            <Link to="/consumer" className="btn btn-glass">
+              Scan an official recall test card
             </Link>
           </div>
-          <div className="mt-3">
+          <div className="mt-3 border-t pt-2 hairline">
+            <div className="eyebrow mb-1">Current official case · CDC/FDA</div>
+            <p className="text-xs text-mid">
+              {o?.title ?? "Cyclospora outbreak linked to shredded iceberg lettuce"}
+            </p>
             <a
               className="eyebrow text-accent underline underline-offset-4"
               href={outbreak.data?.snapshot.sourceUrl}

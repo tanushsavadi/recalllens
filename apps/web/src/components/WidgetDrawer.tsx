@@ -44,7 +44,7 @@ export function WidgetDrawer() {
           />
         </span>
         <span className="text-[13px] font-semibold text-hi">
-          {converged ? "Common origin verified" : `Proving ${count}/${threshold}`}
+          {converged ? "Shared lineage verified" : `Proving ${count}/${threshold}`}
         </span>
         <svg
           width="14" height="14" viewBox="0 0 24 24" fill="none"

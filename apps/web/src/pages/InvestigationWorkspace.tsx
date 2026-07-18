@@ -1,5 +1,6 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import { api, DEMO_CASE_ID } from "../lib/api";
 import {
   Card,
@@ -10,10 +11,11 @@ import {
   truncateHex,
   SyntheticBadge,
 } from "../components/ui";
+import { RoleBanner } from "../components/RoleBanner";
 import { ConvergenceGraph } from "../components/ConvergenceGraph";
 import { RecallImpact } from "../components/RecallImpact";
-import { DisclosureRoom } from "../components/DisclosureRoom";
-import type { OrgProof } from "@recalllens/schemas";
+import { decryptDisclosure } from "@recalllens/gs1";
+import type { MatchRequest } from "@recalllens/schemas";
 
 export function InvestigationWorkspace() {
   const qc = useQueryClient();
@@ -22,69 +24,89 @@ export function InvestigationWorkspace() {
     queryFn: () => api.caseStatus(DEMO_CASE_ID),
     refetchInterval: 3000,
   });
-
-  const prove = useMutation({
-    mutationFn: (orgId: string) => api.submitProof(DEMO_CASE_ID, orgId),
-    onSuccess: (res) => {
-      // Write the authoritative post-proof state into the cache immediately so
-      // the "next org" advances before the next poll (prevents re-submitting
-      // the same org on rapid clicks).
-      qc.setQueryData(["case", DEMO_CASE_ID], (prev: typeof status.data) =>
-        prev
-          ? { ...prev, chain: res.chain, proofs: res.proof
-              ? prev.proofs.map((p) => (p.orgId === res.proof.orgId ? res.proof : p))
-              : prev.proofs }
-          : prev,
-      );
-      qc.invalidateQueries({ queryKey: ["case", DEMO_CASE_ID] });
-    },
+  const requests = useQuery({
+    queryKey: ["requests", DEMO_CASE_ID],
+    queryFn: () => api.investigator.matchRequests(DEMO_CASE_ID),
+    refetchInterval: 3000,
+  });
+  const sentinel = useQuery({
+    queryKey: ["sentinel", DEMO_CASE_ID],
+    queryFn: () => api.sentinel.status(DEMO_CASE_ID),
+    refetchInterval: 4000,
   });
 
-  const proofs = status.data?.proofs ?? [];
+  const requestMatch = useMutation({
+    mutationFn: (orgId: string) => api.investigator.requestMatch(DEMO_CASE_ID, orgId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["requests", DEMO_CASE_ID] }),
+  });
+
+  const authorizeRecall = useMutation({
+    mutationFn: () => api.investigator.authorizeRecall(DEMO_CASE_ID),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["sentinel", DEMO_CASE_ID] }),
+  });
+
   const chain = status.data?.chain;
   const converged = chain?.converged ?? false;
-
-  const nextOrg = useMemo(
-    () => proofs.find((p) => p.stage !== "confirmed"),
-    [proofs],
+  const reqs = requests.data?.requests ?? [];
+  const pendingReq = useMemo(
+    () => reqs.find((r) => r.status !== "proven" && r.status !== "rejected"),
+    [reqs],
   );
+  const nextUnrequested = useMemo(
+    () => reqs.find((r) => r.status === "none"),
+    [reqs],
+  );
+  const holdIssued = !!sentinel.data?.hold;
+  const recallAuthorized = !!sentinel.data?.recallAuthorized;
+
+  // The investigator's graph shows proofs ANONYMOUSLY (role only, no names).
+  const anonProofs = reqs.map((r) => ({
+    orgId: r.orgId,
+    orgName: `Credentialed ${r.role} (anonymous)`,
+    role: r.role,
+    stage: (r.status === "proven" ? "confirmed" : r.status === "proving" ? "proving" : "queued") as
+      | "confirmed"
+      | "proving"
+      | "queued",
+    orgNullifier: null,
+    txId: r.txId,
+    blockHeight: null,
+    preSubmitted: r.preSubmitted,
+    error: null,
+    updatedAt: r.updatedAt,
+  }));
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-extrabold tracking-tight">
-            Investigation Workspace
-          </h1>
+          <h1 className="text-xl font-extrabold tracking-tight">Investigation Workspace</h1>
           <p className="text-sm text-slate-500">
-            Three independent organizations privately prove their records
-            intersect the same outbreak lineage.
+            Request private matches; partners decide whether to prove. You see
+            anonymous proof results — never partner vaults.
           </p>
         </div>
         <div className="flex items-center gap-2">
           <SyntheticBadge />
           <Badge tone={status.data?.mode === "live-devnet" ? "verified" : "amber"}>
-            {status.data?.mode === "live-devnet"
-              ? "Live Midnight devnet"
-              : "Deterministic fallback"}
+            {status.data?.mode === "live-devnet" ? "Live Midnight devnet" : "Deterministic fallback"}
           </Badge>
         </div>
       </div>
+      <RoleBanner role="investigator" />
 
       <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
         <Card className="p-5">
-          <SectionTitle hint="proof segments appear as proofs confirm">
+          <SectionTitle hint="proof segments appear as partners approve">
             Private supply-chain convergence
           </SectionTitle>
-          <div className="h-[460px] w-full overflow-hidden rounded-lg border border-slate-200 bg-midnight-950">
-            <ConvergenceGraph proofs={proofs} converged={converged} />
+          <div className="h-[420px] w-full overflow-hidden rounded-lg border border-slate-200 bg-midnight-950">
+            <ConvergenceGraph proofs={anonProofs} converged={converged} />
           </div>
-          <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-slate-500">
-            <LegendDot className="bg-slate-500" label="Pending organization" />
-            <LegendDot className="bg-amber-safety" label="Proving…" />
-            <LegendDot className="bg-verified" label="Verified proof segment" />
-            <span>Organizations are shown anonymized — no real identities.</span>
-          </div>
+          <p className="mt-3 text-xs text-slate-500">
+            Organizations appear to the investigator only as anonymous
+            credentialed roles. Identities live in each partner's own vault.
+          </p>
         </Card>
 
         <div className="flex flex-col gap-6">
@@ -98,7 +120,7 @@ export function InvestigationWorkspace() {
               />
               <Stat
                 label="State"
-                value={converged ? "CONVERGED" : "Building"}
+                value={converged ? "VERIFIED" : "Building"}
                 tone={converged ? "verified" : "default"}
               />
             </div>
@@ -106,131 +128,144 @@ export function InvestigationWorkspace() {
             {converged ? (
               <div className="mt-4 rounded-lg border border-verified/30 bg-verified-bg p-4">
                 <div className="text-sm font-extrabold uppercase tracking-wide text-verified-fg">
-                  Common lineage verified
+                  Shared supply lineage verified
                 </div>
-                <ul className="mt-1 space-y-0.5 text-sm text-verified-fg">
-                  <li>3 independent credentialed organizations</li>
-                  <li>0 raw partner records written to the public ledger</li>
-                </ul>
-                <p className="mt-2 text-xs text-verified-fg/80">
-                  RecallLens proved that three authenticated private supply
-                  records converge on the same lineage. Epidemiological and
-                  laboratory evidence determines whether that lineage caused the
-                  outbreak.
+                <p className="mt-2 text-xs text-verified-fg/90">
+                  Three distinct credentialed organizations independently proved
+                  that authenticated, precommitted records satisfy this case and
+                  connect to the same hidden lineage. This narrows the
+                  investigation but does not independently establish
+                  contamination or causation.
                 </p>
               </div>
             ) : (
-              <button
-                className="btn-primary mt-4 w-full"
-                disabled={!nextOrg || prove.isPending}
-                onClick={() => nextOrg && prove.mutate(nextOrg.orgId)}
-              >
-                {prove.isPending
-                  ? "Generating proof…"
-                  : nextOrg
-                    ? `Run private match — ${nextOrg.orgName}`
-                    : "All proofs submitted"}
-              </button>
+              <div className="mt-4 flex flex-col gap-2">
+                <button
+                  className="btn btn-primary w-full"
+                  disabled={!nextUnrequested || requestMatch.isPending}
+                  onClick={() => nextUnrequested && requestMatch.mutate(nextUnrequested.orgId)}
+                >
+                  {nextUnrequested
+                    ? `Send private-match request (${nextUnrequested.role})`
+                    : pendingReq
+                      ? `Awaiting partner: ${pendingReq.status}`
+                      : "All requests sent"}
+                </button>
+                {pendingReq && pendingReq.status !== "none" && (
+                  <Link to="/vault" className="btn btn-glass w-full text-xs">
+                    → Switch to the partner role to scan &amp; approve
+                  </Link>
+                )}
+                <p className="text-[11px] text-slate-500">
+                  You cannot generate a partner's proof. The owning organization
+                  scans its own shipment label and approves in its vault.
+                </p>
+              </div>
             )}
-            {prove.isError && (
-              <p className="mt-2 text-xs text-outbreak">
-                {(prove.error as Error).message}
-              </p>
+            {requestMatch.isError && (
+              <p className="mt-2 text-xs text-outbreak">{(requestMatch.error as Error).message}</p>
             )}
           </Card>
 
           <Card className="p-5">
-            <SectionTitle>Organization proofs</SectionTitle>
+            <SectionTitle>Match requests</SectionTitle>
             <ol className="flex flex-col gap-2">
-              {proofs.map((p) => (
-                <ProofRow key={p.orgId} proof={p} />
+              {reqs.map((r) => (
+                <RequestRow key={r.orgId} req={r} />
               ))}
             </ol>
           </Card>
         </div>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card className="p-5">
-          <SectionTitle>Public ledger — what was recorded</SectionTitle>
-          <dl className="flex flex-col gap-1.5 text-sm">
-            <Row label="Contract">
-              <Mono>{truncateHex(chain?.contractAddress, 10, 8)}</Mono>
-            </Row>
-            <Row label="Case tag (anonymous lineage)">
-              <Mono>{truncateHex(chain?.caseTag)}</Mono>
-            </Row>
-            <Row label="Distinct-org nullifiers">
-              <span>{chain?.nullifiers.length ?? 0}</span>
-            </Row>
-            <Row label="Anchored event commitments">
-              <span>{chain?.eventCommitmentCount ?? 0}</span>
-            </Row>
-            <Row label="Registered org credentials">
-              <span>{chain?.registeredOrgCount ?? 0}</span>
-            </Row>
-          </dl>
-          <p className="mt-3 text-xs text-slate-500">
-            Every value above is an opaque hash or a count. No supplier names,
-            lot codes, quantities, routes, or invoices appear.
-          </p>
-        </Card>
+      {/* Post-convergence: encrypted minimum disclosure + targeted action */}
+      {converged && (
+        <div className="grid gap-6 md:grid-cols-2">
+          <DisclosureDecryptPanel />
+          <Card className="p-5">
+            <SectionTitle hint="Simulated impact using demonstration supply records">
+              Targeted action
+            </SectionTitle>
+            <RecallImpact />
+            <div className="mt-4">
+              {recallAuthorized ? (
+                <div className="rounded-lg border border-amber-safety/40 bg-amber-bg p-3">
+                  <Badge tone="amber">AUTHORIZED RECALLLENS DEMONSTRATION RECALL</Badge>
+                  <p className="mt-1 text-xs text-slate-600">
+                    The precautionary hold was converted into an authorized
+                    RecallLens demonstration recall
+                    {sentinel.data?.recallAuthorized?.txId
+                      ? ` (tx ${sentinel.data.recallAuthorized.txId.slice(0, 10)}…)`
+                      : ""}
+                    . This is not an FDA recall.
+                  </p>
+                </div>
+              ) : (
+                <button
+                  className="btn btn-primary w-full"
+                  disabled={!holdIssued || authorizeRecall.isPending}
+                  onClick={() => authorizeRecall.mutate()}
+                  title={holdIssued ? "" : "Requires an issued precautionary hold (Sentinel)"}
+                >
+                  {authorizeRecall.isPending ? "Authorizing…" : "Issue targeted confidential hold → authorize recall"}
+                </button>
+              )}
+              {authorizeRecall.isError && (
+                <p className="mt-2 text-xs text-outbreak">{(authorizeRecall.error as Error).message}</p>
+              )}
+            </div>
+          </Card>
+        </div>
+      )}
 
-        <Card className="p-5">
-          <SectionTitle>Nullifiers prevent inflation</SectionTitle>
-          <p className="text-sm text-slate-600">
-            Each proof derives a nullifier from the organization's{" "}
-            <strong>registered credential secret</strong>, not from a
-            caller-chosen value. One organization cannot count more than once for
-            a case, and three matches cannot come from a single credential.
-          </p>
-          <div className="mt-3 space-y-1.5">
-            {(chain?.nullifiers ?? []).map((n, i) => (
-              <div
-                key={n}
-                className="flex items-center gap-2 rounded bg-surface-muted px-2 py-1.5 text-xs"
-              >
-                <Badge tone="verified">#{i + 1}</Badge>
-                <Mono>{truncateHex(n, 12, 10)}</Mono>
-              </div>
-            ))}
-            {(chain?.nullifiers.length ?? 0) === 0 && (
-              <p className="text-xs text-slate-400">No nullifiers yet.</p>
-            )}
-          </div>
-        </Card>
-      </div>
-
-      <RecallImpact />
-
-      <DisclosureRoom proofs={proofs} />
+      {/* Public ledger panel */}
+      <Card className="p-5">
+        <SectionTitle>Public ledger — what was recorded</SectionTitle>
+        <dl className="grid gap-1.5 text-sm sm:grid-cols-2">
+          <Row label="Contract"><Mono>{truncateHex(chain?.contractAddress, 10, 8)}</Mono></Row>
+          <Row label="Case tag (anonymous lineage)"><Mono>{truncateHex(chain?.caseTag)}</Mono></Row>
+          <Row label="Distinct-org nullifiers"><span>{chain?.nullifiers.length ?? 0}</span></Row>
+          <Row label="Anchored event commitments"><span>{chain?.eventCommitmentCount ?? 0}</span></Row>
+          <Row label="Hold commitment">
+            <Mono>{truncateHex(sentinel.data?.hold?.holdCommitment ?? null)}</Mono>
+          </Row>
+          <Row label="Recall predicate hash">
+            <Mono>{truncateHex(sentinel.data?.recallAuthorized?.predicateHash ?? null)}</Mono>
+          </Row>
+        </dl>
+        <p className="mt-3 text-xs text-slate-500">
+          Every value above is an opaque hash or a count. No supplier names, lot
+          codes, quantities, routes, or invoices appear.
+        </p>
+      </Card>
     </div>
   );
 }
 
-function ProofRow({ proof }: { proof: OrgProof }) {
+function RequestRow({ req }: { req: MatchRequest }) {
   const tone =
-    proof.stage === "confirmed"
+    req.status === "proven"
       ? "verified"
-      : proof.stage === "failed"
+      : req.status === "rejected"
         ? "outbreak"
-        : proof.stage === "queued"
+        : req.status === "none"
           ? "neutral"
           : "amber";
   return (
     <li className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2">
       <div>
         <div className="text-sm font-semibold text-hi">
-          {proof.orgName}
+          Credentialed {req.role} <span className="text-xs text-slate-500">(anonymous)</span>
         </div>
-        <div className="text-xs capitalize text-slate-500">{proof.role}</div>
+        <div className="text-xs text-slate-500">
+          {req.preSubmitted ? "pre-submitted before demo" : "live"}
+        </div>
       </div>
       <div className="text-right">
-        <Badge tone={tone}>{proof.stage}</Badge>
-        {proof.txId && (
+        <Badge tone={tone}>{req.status}</Badge>
+        {req.txId && (
           <div className="mt-1 text-[10px] text-slate-400">
-            tx <Mono>{truncateHex(proof.txId, 6, 6)}</Mono>
-            {proof.preSubmitted && " · pre-submitted"}
+            tx <Mono>{truncateHex(req.txId, 6, 6)}</Mono>
           </div>
         )}
       </div>
@@ -238,20 +273,79 @@ function ProofRow({ proof }: { proof: OrgProof }) {
   );
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+/** Investigator-side decryption of the partner's encrypted disclosure. */
+function DisclosureDecryptPanel() {
+  const pkg = useQuery({
+    queryKey: ["disclosure-package"],
+    queryFn: () => api.investigator.getDisclosurePackage(),
+    refetchInterval: 4000,
+  });
+  const [decrypted, setDecrypted] = useState<Record<string, string> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const p = pkg.data?.package;
+
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-1.5 last:border-0">
-      <dt className="text-slate-500">{label}</dt>
-      <dd className="font-medium text-slate-800">{children}</dd>
-    </div>
+    <Card className="p-5">
+      <SectionTitle hint="ciphertext only — plaintext never transits">
+        Encrypted minimum disclosure
+      </SectionTitle>
+      {!p ? (
+        <p className="text-sm text-slate-500">
+          No disclosure package yet. Request fields from the partner vault; the
+          partner approves each field individually and encrypts them for you.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-3">
+          <dl className="text-xs text-slate-500">
+            <div className="flex justify-between"><dt>Approved fields</dt><dd className="text-mid">{p.approvedFields.join(", ")}</dd></div>
+            <div className="flex justify-between"><dt>Rejected fields</dt><dd className="text-mid">{p.rejectedFields.join(", ") || "—"}</dd></div>
+            <div className="flex justify-between"><dt>Authorization hash</dt><dd><Mono>{truncateHex(p.authorizationHash, 10, 8)}</Mono></dd></div>
+            <div className="flex justify-between"><dt>Ciphertext digest</dt><dd><Mono>{truncateHex(p.ciphertextDigest, 10, 8)}</Mono></dd></div>
+          </dl>
+          {!decrypted ? (
+            <button
+              className="btn btn-primary"
+              onClick={async () => {
+                try {
+                  setDecrypted(await decryptDisclosure(p));
+                  setError(null);
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : String(e));
+                }
+              }}
+            >
+              🔓 Decrypt approved fields (in-browser)
+            </button>
+          ) : (
+            <div className="rounded-lg border border-verified/30 bg-verified-bg p-3">
+              <Badge tone="verified">PROBABLE SOURCE NARROWED</Badge>
+              <dl className="mt-2 space-y-1 text-sm">
+                {Object.entries(decrypted).map(([k, v]) => (
+                  <div key={k} className="flex justify-between gap-3">
+                    <dt className="text-slate-600">{k}</dt>
+                    <dd><Mono>{v}</Mono></dd>
+                  </div>
+                ))}
+              </dl>
+              <p className="mt-2 text-[11px] text-slate-500">
+                Only the fields the partner individually approved. This narrows
+                the probable source; it does not prove causation.
+              </p>
+            </div>
+          )}
+          {error && <p className="text-xs text-outbreak">{error}</p>}
+        </div>
+      )}
+    </Card>
   );
 }
 
-function LegendDot({ className, label }: { className: string; label: string }) {
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <span className="flex items-center gap-1.5">
-      <span className={`inline-block h-2.5 w-2.5 rounded-full ${className}`} />
-      {label}
-    </span>
+    <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-1.5">
+      <dt className="text-slate-500">{label}</dt>
+      <dd className="font-medium text-slate-800">{children}</dd>
+    </div>
   );
 }

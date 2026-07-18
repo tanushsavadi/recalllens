@@ -5,7 +5,11 @@
 // parity between off-chain and in-circuit computation rather than re-implementing
 // hashes in JS.
 
-import { pureCircuits, type TraceEvent } from "../src/managed/recalllens/contract/index.js";
+import {
+  pureCircuits,
+  type SafetySignal,
+  type TraceEvent,
+} from "../src/managed/recalllens/contract/index.js";
 import {
   createRecallLensPrivateState,
   type RecallLensPrivateState,
@@ -70,6 +74,56 @@ export function proverState(
   ev: TraceEvent,
 ): RecallLensPrivateState {
   return createRecallLensPrivateState(orgSecret, ev);
+}
+
+// --- SENTINEL layer helpers -------------------------------------------------
+
+/** Build a SafetySignal from parts. */
+export function makeSignal(
+  lineageToken: Uint8Array,
+  productHash: Uint8Array,
+  signalTime: bigint,
+  category: bigint,
+  blinding: Uint8Array,
+): SafetySignal {
+  return { lineageToken, productHash, signalTime, category, blinding };
+}
+
+/** Client-side signal commitment — identical to the in-circuit derivation. */
+export function signalCommitment(sig: SafetySignal): Uint8Array {
+  return pureCircuits.deriveSignalCommitment(
+    sig.lineageToken,
+    sig.productHash,
+    sig.signalTime,
+    sig.category,
+    sig.blinding,
+  );
+}
+
+/** Client-side sentinel tag — identical to the in-circuit derivation. */
+export function sentinelTag(caseId: Uint8Array, lineageToken: Uint8Array): Uint8Array {
+  return pureCircuits.deriveSentinelTag(caseId, lineageToken);
+}
+
+/** Client-side signal nullifier — identical to the in-circuit derivation. */
+export function signalNullifier(caseId: Uint8Array, orgSecret: Uint8Array): Uint8Array {
+  return pureCircuits.deriveSignalNullifier(caseId, orgSecret);
+}
+
+/** Assemble a signal-prover private state (org secret + held signal). The trace
+ * event is a zero placeholder (submitSafetySignal never reads it) and the registrar
+ * secret defaults to a zero placeholder (submitSafetySignal never reads it). */
+export function signalProverState(
+  orgSecret: Uint8Array,
+  sig: SafetySignal,
+): RecallLensPrivateState {
+  const zeroEvent: TraceEvent = {
+    lineageToken: new Uint8Array(32),
+    productHash: new Uint8Array(32),
+    eventTime: 0n,
+    blinding: new Uint8Array(32),
+  };
+  return createRecallLensPrivateState(orgSecret, zeroEvent, undefined, sig);
 }
 
 /** Hex compare helper for Uint8Array equality assertions. */

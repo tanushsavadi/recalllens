@@ -52,38 +52,74 @@ export class FallbackBackend implements ChainBackend {
   private runtime(caseId: string): CaseRuntime {
     let rt = this.cases.get(caseId);
     if (!rt) {
+      // Mirror the seeded live-demo state: the FIRST TWO orgs are
+      // pre-submitted (their nullifiers counted), the third awaits its owner.
+      const orgs = organizations
+        .filter((o) => affectedEvents[o.orgId])
+        .slice(0, DEMO_CASE.convergenceThreshold);
       rt = {
         nullifiers: new Set(),
         matchByTag: new Map(),
         caseTag: null,
         proofs: new Map(
-          organizations
-            .filter((o) => affectedEvents[o.orgId])
-            .slice(0, DEMO_CASE.convergenceThreshold)
-            .map((o) => [
-              o.orgId,
-              {
-                orgId: o.orgId,
-                orgName: o.name,
-                role: o.role,
-                stage: "queued" as const,
-                orgNullifier: null,
-                txId: null,
-                blockHeight: null,
-                preSubmitted: false,
-                error: null,
-                updatedAt: this.nowFn().toISOString(),
-              },
-            ]),
+          orgs.map((o, i) => [
+            o.orgId,
+            {
+              orgId: o.orgId,
+              orgName: o.name,
+              role: o.role,
+              stage: (i < 2 ? "confirmed" : "queued") as OrgProof["stage"],
+              orgNullifier: null,
+              txId: i < 2 ? "(pre-submitted)" : null,
+              blockHeight: null,
+              preSubmitted: i < 2,
+              error: null,
+              updatedAt: this.nowFn().toISOString(),
+            },
+          ]),
         ),
       };
       this.cases.set(caseId, rt);
+      // Count the two pre-submitted proofs exactly like real submissions.
+      for (const o of orgs.slice(0, 2)) {
+        const ev = affectedEvents[o.orgId];
+        const tag = bytesToHex(deriveCaseTag(caseId, ev.lineageToken));
+        const nullifier = bytesToHex(deriveOrgNullifier(caseId, o.orgSecret));
+        rt.nullifiers.add(nullifier);
+        rt.caseTag = tag;
+        rt.matchByTag.set(tag, (rt.matchByTag.get(tag) ?? 0) + 1);
+        const p = rt.proofs.get(o.orgId)!;
+        p.orgNullifier = nullifier;
+      }
     }
     return rt;
   }
 
   async reset(caseId: string): Promise<void> {
     this.cases.delete(caseId);
+  }
+
+  /* Sentinel ops — deterministic fallback: same rules, NO fabricated txids. */
+  async submitSentinelSignal(
+    caseId: string,
+    orgId: string,
+    _category: string,
+  ): Promise<{ txId: string | null; nullifier: string | null }> {
+    const org = organizations.find((o) => o.orgId === orgId);
+    if (!org) throw new Error(`unknown org ${orgId}`);
+    // Distinct-org nullifier semantics mirror the contract design.
+    const nullifier = bytesToHex(
+      deriveOrgNullifier(caseId, org.orgSecret),
+    );
+    return { txId: null, nullifier };
+  }
+
+  async issueHold(_caseId: string, _holdCommitment: string): Promise<{ txId: string | null }> {
+    return { txId: null };
+  }
+
+  async authorizeRecall(_caseId: string, _predicateHash: string): Promise<{ txId: string | null }> {
+    return { txId: null };
   }
 
   async getCaseState(caseId: string): Promise<CaseChainState> {

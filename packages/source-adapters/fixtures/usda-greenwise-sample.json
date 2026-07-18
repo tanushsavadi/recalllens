@@ -1,0 +1,37 @@
+{
+  "totalHits": 8411,
+  "currentPage": 1,
+  "note": "Trimmed sample: Branded-only results retaining gtinUpc field, retrieved 2026-07-18 via api.nal.usda.gov/fdc/v1 with DEMO_KEY",
+  "foods": [
+    {
+      "fdcId": 2065209,
+      "description": "PUBLIX, GREENWISE, ORGANIC ROASTED GARLIC SAUCE",
+      "dataType": "Branded",
+      "gtinUpc": "041415107083",
+      "brandOwner": "Publix Super Markets, Inc.",
+      "brandName": "PUBLIX",
+      "packageWeight": "24 oz/680 g",
+      "publishedDate": "2021-10-28"
+    },
+    {
+      "fdcId": 2045399,
+      "description": "PUBLIX GREENWISE, ORGANIC BLUE CORN TORTILLA CHIPS",
+      "dataType": "Branded",
+      "gtinUpc": "041415100336",
+      "brandOwner": "Publix Super Markets, Inc.",
+      "brandName": "PUBLIX GREENWISE",
+      "packageWeight": "9 oz/255 g",
+      "publishedDate": "2021-10-28"
+    },
+    {
+      "fdcId": 1661957,
+      "description": "PUBLIX GREENWISE, ORGANIC CAGE-FREE EXTRA LARGE BROWN EGGS",
+      "dataType": "Branded",
+      "gtinUpc": "041415016668",
+      "brandOwner": "Publix Super Markets, Inc.",
+      "brandName": "PUBLIX GREENWISE",
+      "packageWeight": null,
+      "publishedDate": "2021-03-19"
+    }
+  ]
+}

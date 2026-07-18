@@ -222,3 +222,128 @@ export async function proveForOrg(
     blockHeight: res.public.blockHeight ?? null,
   };
 }
+
+/* ── SENTINEL on-chain operations (genuine circuits) ─────────────────────── */
+
+/** Deterministic synthetic signal record for an org (same lineage as its event). */
+export function signalForOrg(org: Organization, category: number) {
+  const ev = affectedEvents[org.orgId];
+  return {
+    lineageToken: hexToBytes(ev.lineageToken),
+    productHash: productHash(ev.productGtin),
+    signalTime: eventTimeUnix(ev.eventTime), // in the case window by construction
+    category: BigInt(category),
+    // deterministic per-org signal blinding (distinct from the event blinding)
+    blinding: hexToBytes(ev.blinding.slice(0, 62) + "5e"),
+  };
+}
+
+/** Open the Sentinel case (registrar-gated). */
+export async function openSentinelCaseOnChain(
+  session: OnchainSession,
+  address: string,
+): Promise<string> {
+  const handle = await adminHandle(session, address);
+  const res = await handle.callTx.openSentinelCase(
+    hexToBytes(DEMO_CASE.caseId),
+    productHash(DEMO_CASE.productGtin),
+    eventTimeUnix(DEMO_CASE.windowStart),
+    eventTimeUnix(DEMO_CASE.windowEnd),
+  );
+  return res.public.txId;
+}
+
+/** Commit an org's signal commitment (reuses commitTraceEvent's tree). */
+export async function commitSignalForOrg(
+  session: OnchainSession,
+  address: string,
+  org: Organization,
+  category: number,
+): Promise<string> {
+  const { pureCircuits } = await import("@recalllens/contract");
+  const handle = await adminHandle(session, address);
+  const s = signalForOrg(org, category);
+  const commitment = pureCircuits.deriveSignalCommitment(
+    s.lineageToken,
+    s.productHash,
+    s.signalTime,
+    s.category,
+    s.blinding,
+  );
+  const res = await handle.callTx.commitTraceEvent(commitment);
+  return res.public.txId;
+}
+
+/** The org itself submits its safety signal — REAL ZK proof + settled tx. */
+export async function submitSignalForOrg(
+  session: OnchainSession,
+  address: string,
+  org: Organization,
+  category: number,
+): Promise<{ txId: string; nullifier: string }> {
+  const { pureCircuits } = await import("@recalllens/contract");
+  const compiled = await loadCompiledContract(recallWitnesses);
+  const ev = affectedEvents[org.orgId];
+  const s = signalForOrg(org, category);
+  const handle = (await findDeployedContract(session.providers, {
+    compiledContract: compiled as any,
+    contractAddress: address,
+    privateStateId: `recalllens:sentinel:${org.orgId}`,
+    initialPrivateState: createRecallLensPrivateState(
+      hexToBytes(org.orgSecret),
+      traceEventToContract(ev),
+      undefined,
+      s,
+    ),
+  })) as any;
+  const res = await handle.callTx.submitSafetySignal(
+    hexToBytes(DEMO_CASE.caseId),
+    BigInt(category),
+  );
+  const nullifier = pureCircuits.deriveSignalNullifier(
+    hexToBytes(DEMO_CASE.caseId),
+    hexToBytes(org.orgSecret),
+  );
+  return {
+    txId: res.public.txId,
+    nullifier: Array.from(nullifier as Uint8Array)
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join(""),
+  };
+}
+
+/** Registrar anchors the precautionary hold (requires threshold reached). */
+export async function issueHoldOnChain(
+  session: OnchainSession,
+  address: string,
+  holdCommitmentHex: string,
+): Promise<string> {
+  const { pureCircuits } = await import("@recalllens/contract");
+  const handle = await adminHandle(session, address);
+  // sentinelTag derives from the affected lineage (public math, same as UI)
+  const anyAffected = Object.values(affectedEvents)[0];
+  const tag = pureCircuits.deriveSentinelTag(
+    hexToBytes(DEMO_CASE.caseId),
+    hexToBytes(anyAffected.lineageToken),
+  );
+  const res = await handle.callTx.issuePrecautionaryHold(
+    hexToBytes(DEMO_CASE.caseId),
+    tag,
+    hexToBytes(holdCommitmentHex),
+  );
+  return res.public.txId;
+}
+
+/** Registrar authorizes the recall predicate (requires an existing hold). */
+export async function authorizeRecallOnChain(
+  session: OnchainSession,
+  address: string,
+  predicateHashHex: string,
+): Promise<string> {
+  const handle = await adminHandle(session, address);
+  const res = await handle.callTx.authorizeRecallPredicate(
+    hexToBytes(DEMO_CASE.caseId),
+    hexToBytes(predicateHashHex),
+  );
+  return res.public.txId;
+}

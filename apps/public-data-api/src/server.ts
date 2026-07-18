@@ -17,9 +17,12 @@
  */
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
+import { z } from "zod";
 import {
   getOutbreak,
   searchFoodRecalls,
+  getFdaAdvisory,
+  classifyScan,
 } from "@recalllens/source-adapters";
 import {
   DEMO_CASE,
@@ -27,17 +30,16 @@ import {
   receipts,
   affectedEvents,
   AFFECTED_LINEAGE_TOKEN,
-  lookupVaultLot,
   organizations,
 } from "@recalllens/demo-fixtures";
 import {
-  SubmitProofRequest,
   ConsumerCheckRequest,
-  ScanCheckRequest,
-  DisclosureRequest,
+  ConsumerVerifyRequest,
+  DisclosurePackage,
 } from "@recalllens/schemas";
+import { verifyPassport, passportCommitment } from "@recalllens/gs1";
 import { selectBackend } from "@recalllens/midnight-client";
-import { makeAuthorization } from "./disclosure";
+import { WorkflowEngine } from "./workflow";
 
 const app = new Hono();
 
@@ -51,6 +53,7 @@ app.use("*", async (c, next) => {
 });
 
 const backend = await selectBackend();
+const workflow = new WorkflowEngine(backend);
 console.log(
   `[public-data-api] chain backend: ${backend.mode} (${backend.info().network} @ ${backend.info().contractAddress})`,
 );
@@ -93,31 +96,144 @@ app.get("/api/case/:caseId", async (c) => {
   return c.json({ chain, proofs, mode: backend.mode });
 });
 
-app.post("/api/case/prove", async (c) => {
-  const parsed = SubmitProofRequest.safeParse(await c.req.json());
-  if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400);
+/* ── ROLE-SEPARATED TRACE WORKFLOW ──────────────────────────────────────
+ * The investigator can only REQUEST a match. Proof generation belongs to the
+ * owning partner: scan-your-own-label → review predicate → approve. The old
+ * /api/case/prove endpoint (which let any caller run any org's proof) is
+ * intentionally REMOVED. */
+
+app.get("/api/case/:caseId/requests", async (c) => {
+  const requests = await workflow.matchRequests(c.req.param("caseId"));
+  return c.json({ requests, mode: backend.mode });
+});
+
+app.post("/api/investigator/request-match", async (c) => {
+  const body = z
+    .object({ caseId: z.string(), orgId: z.string() })
+    .safeParse(await c.req.json());
+  if (!body.success) return c.json({ error: body.error.flatten() }, 400);
   try {
-    const { proof, chain } = await backend.submitProof(
-      parsed.data.caseId,
-      parsed.data.orgId,
-    );
-    return c.json({ accepted: true, proof, chain });
+    const request = await workflow.requestMatch(body.data.caseId, body.data.orgId);
+    return c.json({ request });
   } catch (e) {
-    return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
+    return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
   }
+});
+
+app.post("/api/partner/scan", async (c) => {
+  const body = z
+    .object({
+      caseId: z.string(),
+      actingOrgId: z.string(),
+      gtin: z.string(),
+      lot: z.string(),
+    })
+    .safeParse(await c.req.json());
+  if (!body.success) return c.json({ error: body.error.flatten() }, 400);
+  try {
+    const res = await workflow.partnerScan(
+      body.data.caseId,
+      body.data.actingOrgId,
+      body.data.gtin,
+      body.data.lot,
+    );
+    return c.json(res);
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : String(e) }, 403);
+  }
+});
+
+app.post("/api/partner/approve", async (c) => {
+  const body = z
+    .object({ caseId: z.string(), actingOrgId: z.string() })
+    .safeParse(await c.req.json());
+  if (!body.success) return c.json({ error: body.error.flatten() }, 400);
+  try {
+    const res = await workflow.partnerApprove(body.data.caseId, body.data.actingOrgId);
+    return c.json(res);
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : String(e) }, 403);
+  }
+});
+
+app.post("/api/partner/reject", async (c) => {
+  const body = z
+    .object({ caseId: z.string(), actingOrgId: z.string() })
+    .safeParse(await c.req.json());
+  if (!body.success) return c.json({ error: body.error.flatten() }, 400);
+  const request = await workflow.partnerReject(body.data.caseId, body.data.actingOrgId);
+  return c.json({ request });
 });
 
 app.post("/api/case/:caseId/reset", async (c) => {
   const caseId = c.req.param("caseId");
+  workflow.reset();
   if (!backend.reset) {
     return c.json(
-      { reset: false, mode: backend.mode, note: "live backend cannot un-submit on-chain proofs; re-seed via deploy script" },
+      { reset: true, chainReset: false, mode: backend.mode, note: "workflow reset; live chain state re-seeds via deploy script" },
       200,
     );
   }
   await backend.reset(caseId);
-  return c.json({ reset: true, mode: backend.mode });
+  return c.json({ reset: true, chainReset: true, mode: backend.mode });
 });
+
+/* ── SENTINEL ──────────────────────────────────────────────────────────── */
+
+app.get("/api/sentinel/:caseId", async (c) => {
+  return c.json(await workflow.sentinelStatus(c.req.param("caseId")));
+});
+
+app.post("/api/sentinel/approve-signal", async (c) => {
+  const body = z
+    .object({ caseId: z.string(), signalId: z.string(), actingOrgId: z.string() })
+    .safeParse(await c.req.json());
+  if (!body.success) return c.json({ error: body.error.flatten() }, 400);
+  try {
+    const signal = await workflow.approveSignal(
+      body.data.caseId,
+      body.data.signalId,
+      body.data.actingOrgId,
+    );
+    return c.json({ signal, status: await workflow.sentinelStatus(body.data.caseId) });
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : String(e) }, 403);
+  }
+});
+
+app.post("/api/sentinel/issue-hold", async (c) => {
+  const body = z
+    .object({ caseId: z.string(), passportCommitments: z.array(z.string()).min(1) })
+    .safeParse(await c.req.json());
+  if (!body.success) return c.json({ error: body.error.flatten() }, 400);
+  try {
+    const hold = await workflow.issueHold(body.data.caseId, body.data.passportCommitments);
+    return c.json({ hold });
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
+  }
+});
+
+app.post("/api/sentinel/authorize-recall", async (c) => {
+  const body = z.object({ caseId: z.string() }).safeParse(await c.req.json());
+  if (!body.success) return c.json({ error: body.error.flatten() }, 400);
+  try {
+    const recall = await workflow.authorizeRecall(body.data.caseId);
+    return c.json({ recall });
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
+  }
+});
+
+/* ── REMOVAL VERIFICATION ──────────────────────────────────────────────── */
+
+app.post("/api/partner/confirm-removal", async (c) => {
+  const body = z.object({ orgId: z.string() }).safeParse(await c.req.json());
+  if (!body.success) return c.json({ error: body.error.flatten() }, 400);
+  return c.json({ removal: workflow.confirmRemoval(body.data.orgId) });
+});
+
+app.get("/api/removal", (c) => c.json({ removal: workflow.getRemoval() }));
 
 app.get("/api/case/:caseId/recall-impact", (c) => {
   const impact = computeRecallImpact(AFFECTED_LINEAGE_TOKEN);
@@ -149,120 +265,93 @@ app.post("/api/consumer/check", async (c) => {
   });
 });
 
-app.post("/api/scan/check", async (c) => {
-  const parsed = ScanCheckRequest.safeParse(await c.req.json());
+/* ── CONSUMER RECALL INTELLIGENCE ───────────────────────────────────────
+ * The consumer verify is a READ-ONLY downstream operation. It NEVER runs a
+ * supply-chain partner's proof (the old behavior was removed — see
+ * docs/PRODUCT_REWORK_AUDIT.md C1). Precedence: official FDA identifiers →
+ * authorized RecallLens recall → proof-verified hold → no match. */
+
+app.post("/api/consumer/verify", async (c) => {
+  const parsed = ConsumerVerifyRequest.safeParse(await c.req.json());
   if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400);
-  const { caseId, gtin, lot } = parsed.data;
+  const input = parsed.data;
 
-  // The GTIN+lot are LOOKUP KEYS into the private vault. The vault resolves the
-  // private lineage token (which never appears on the label or the ledger).
-  const vault = lookupVaultLot(gtin, lot);
-  const isAffected = vault?.lineageToken === AFFECTED_LINEAGE_TOKEN;
-
-  const safetyDisclaimer =
-    "This is not proof that the product is safe, and not a medical diagnosis. Follow current CDC/FDA guidance.";
-
-  if (!isAffected) {
-    // Never fabricate an affected result. Unknown lot or clean lot → honest
-    // no-intersection, with the safety caveat and a link to the official case.
-    return c.json({
-      outcome: "no-intersection",
-      affected: false,
-      matchedVault: !!vault,
-      title: vault
-        ? "No verified intersection found"
-        : "No verified intersection found in the information currently available",
-      message: vault
-        ? "This scanned lot does not intersect the verified affected lineage for this outbreak case."
-        : "This product/lot has no authoritative match in the information currently available. The official investigation concerns shredded iceberg lettuce served through specific restaurant locations; an arbitrary retail bag is not automatically part of that investigation.",
-      guidance:
-        "No action indicated by RecallLens. Monitor official updates and follow food-safety guidance.",
-      safetyDisclaimer,
-      sourceUrl: DEMO_CASE.sourceUrl,
-      syntheticPrivateRecords: true,
-      proofSubmitted: false,
-      proof: null,
-      chain: await backend.getCaseState(caseId).catch(() => null),
+  // 1. Validate a scanned passport (if present) and derive its commitment.
+  let passportInfo: {
+    valid: boolean;
+    issuer: string;
+    passportId: string;
+    tampered: boolean;
+  } | null = null;
+  let commitment: string | null = null;
+  if (input.passport && input.lot && input.expiry !== undefined) {
+    const verified = await verifyPassport({
+      gtin: input.gtin,
+      lot: input.lot,
+      expiry: input.expiry ?? "",
+      passportId: input.passport.passportId,
+      issuer: input.passport.issuer,
+      issuerCredentialRef: "did:demo:recalllens:issuer:1",
+      signature: input.passport.signature,
     });
+    passportInfo = {
+      valid: verified.valid,
+      issuer: input.passport.issuer,
+      passportId: input.passport.passportId,
+      tampered: verified.tampered,
+    };
+    commitment = verified.valid ? verified.commitment : null;
   }
 
-  // SYNTHETIC POSITIVE: the affected demo lot. Drive the genuine pipeline — run
-  // the next unconfirmed org's REAL proof (the live convergence action). If all
-  // are already confirmed (already converged), just read the verified state.
-  const proofs = await backend.getProofs(caseId);
-  const next = proofs.find((p) => p.stage !== "confirmed");
-  let submittedProof = null;
-  let chain = await backend.getCaseState(caseId);
-  if (next) {
-    try {
-      const res = await backend.submitProof(caseId, next.orgId);
-      submittedProof = res.proof;
-      chain = res.chain;
-    } catch (e) {
-      return c.json(
-        {
-          outcome: "synthetic-positive",
-          affected: true,
-          matchedVault: true,
-          title: "Synthetic positive demonstration — proof failed",
-          message: `The affected synthetic lot matched, but the on-chain proof failed: ${
-            e instanceof Error ? e.message : String(e)
-          }`,
-          guidance: "Retry, or check proof-server/indexer status.",
-          safetyDisclaimer,
-          sourceUrl: DEMO_CASE.sourceUrl,
-          syntheticPrivateRecords: true,
-          proofSubmitted: false,
-          proof: null,
-          chain,
-        },
-        200,
-      );
-    }
-  } else {
-    submittedProof = proofs.find((p) => p.role === "distributor") ?? null;
-  }
+  // 2. Check the hold registry / authorized recall (genuine chain-anchored
+  //    where the live backend is active; membership itself is a local set
+  //    check against the anchored commitment — documented demo limitation).
+  const hold = commitment ? workflow.holdMembership(commitment) : { member: false, txId: null };
+  const recall = commitment ? workflow.recallMembership(commitment) : { authorized: false, txId: null };
 
-  const orgName =
-    organizations.find((o) => o.orgId === (next?.orgId ?? ""))?.name ?? "a partner";
-
-  return c.json({
-    outcome: "synthetic-positive",
-    affected: true,
-    matchedVault: true,
-    title: "Affected purchase detected — synthetic positive demonstration",
-    message: `The scanned lot matches the verified affected lineage. ${
-      next
-        ? `Running ${orgName}'s private proof produced a genuine Compact-backed state transition.`
-        : "This case has already converged on-chain."
-    }`,
-    guidance:
-      "If you have symptoms of cyclosporiasis (watery diarrhea, loss of appetite, cramping), contact a healthcare provider. Do not consume any remaining product from this purchase.",
-    safetyDisclaimer:
-      "The private partner records are synthetic; the Compact proof and Midnight state transition are genuine. " +
-      safetyDisclaimer,
-    sourceUrl: DEMO_CASE.sourceUrl,
-    syntheticPrivateRecords: true,
-    proofSubmitted: !!submittedProof && !!next,
-    proof: submittedProof,
-    chain,
-  });
+  // 3. Classify with full provenance.
+  const receipt = await classifyScan(
+    {
+      gtin: input.gtin,
+      lot: input.lot,
+      expiry: input.expiry,
+      productName: input.productName,
+      passport: passportInfo,
+    },
+    {
+      holdMember: hold.member,
+      holdTxId: hold.txId,
+      recallAuthorized: recall.authorized,
+      recallTxId: recall.txId,
+      network: backend.info().network,
+      live: backend.mode === "live-devnet",
+    },
+  );
+  return c.json(receipt);
 });
 
-app.post("/api/disclosure/authorize", async (c) => {
-  const body = await c.req.json();
-  const parsed = DisclosureRequest.extend({
-    approved: (await import("zod")).z.boolean(),
-  }).safeParse(body);
+/* Legacy passport-free FDA advisory lookup, used by the Command Center. */
+app.get("/api/fda/advisory/:id", async (c) => {
+  const id = c.req.param("id") === "lettuce" ? "lettuce" : "blueberries";
+  const res = await getFdaAdvisory(id);
+  return c.json(res);
+});
+
+/* ── ENCRYPTED SELECTIVE DISCLOSURE ─────────────────────────────────────
+ * The PARTNER encrypts approved fields in-browser (ECDH+AES-GCM) and posts
+ * ONLY the ciphertext package here; the server is a dumb mailbox. The
+ * investigator fetches and decrypts client-side. Plaintext never transits. */
+
+app.post("/api/disclosure/package", async (c) => {
+  const parsed = DisclosurePackage.safeParse(await c.req.json());
   if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400);
-  const auth = makeAuthorization(
-    parsed.data.caseId,
-    parsed.data.orgId,
-    parsed.data.requestedFields,
-    parsed.data.approved,
-    new Date().toISOString(),
-  );
-  return c.json(auth);
+  workflow.setDisclosure(parsed.data);
+  return c.json({ stored: true, authorizationHash: parsed.data.authorizationHash });
+});
+
+app.get("/api/disclosure/package", (c) => {
+  const pkg = workflow.getDisclosure();
+  return c.json({ package: pkg });
 });
 
 app.get("/api/fda/recalls", async (c) => {

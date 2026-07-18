@@ -1,8 +1,56 @@
 # RecallLens — Build State
 
-**Current milestone:** Cockpit UI overhaul complete — massive centered globe,
-liquid glass, AMOLED dark + light themes, widget drawer; all suites green.
-**Last updated:** 2026-07-18 (globe-cockpit redesign pass; see D16)
+**Current milestone:** PRODUCT REWORK COMPLETE — role-separated workflow,
+Sentinel early-warning (genuine Compact circuits), consumer Recall
+Intelligence on real FDA data, signed passports, encrypted disclosure.
+**Last updated:** 2026-07-18 (coherence rework; checkpoint tag
+`checkpoint-pre-rework` = a029580)
+
+## Rework evidence (all verified this session against live tools)
+
+**Contract (Sentinel-extended):** 9 circuits, full-ZK compile exit 0,
+**43/43 simulator tests** (16 original + 27 Sentinel: signal categories,
+threshold policy, tampered/duplicate/unregistered/window rejections,
+hold + recall lifecycle). Constructor unchanged; new pure circuits
+deriveSignalCommitment/deriveSentinelTag/deriveSignalNullifier.
+
+**Genuine on-chain transitions this session (fresh contract
+`74bfa9b0…` first, then demo re-seed `see .recalllens-deployment.json`):**
+- openSentinelCase tx `0020b1967a…`; 3 signal commitments; 2 signals
+  pre-submitted (QA + cold-chain)
+- LIVE third signal (QuickServe exposure-cluster, owner-approved through the
+  role-guarded API): tx `0017c16c4d…` → threshold TRUE (3 signals/3 orgs/3
+  categories/1 high-confidence)
+- issuePrecautionaryHold tx `00492081d6…` (hold commitment anchored)
+- Consumer scan of the SIGNED lettuce passport → PROOF_VERIFIED_PRECAUTIONARY_HOLD
+  (passport signature valid; membership vs anchored hold)
+- Role-correct trace: investigator request → Meridian scan (own lot enforced)
+  → approve → genuine proveRelevantEvent tx `00b87a8d93…` → 3/3 converged
+- authorizeRecallPredicate tx `00cbad4776…` → consumer re-scan →
+  AUTHORIZED_RECALL_MATCH ("not an FDA recall" shown)
+- Encrypted disclosure round-trip via API: ciphertext-only transit, 3 approved
+  fields decrypt, rejected field absent from plaintext & ciphertext
+
+**Role guards verified live:** `/api/case/prove` REMOVED (404); partner
+approve without own scan → 403; wrong org approving another's signal → 403;
+consumer verify leaves trace count untouched (e2e-asserted).
+
+**Consumer Recall Intelligence (real official data):** FDA lettuce +
+blueberries advisories fetched LIVE (sha256s in SOURCE_PROVENANCE), parsers
+tested against real markup; EXACT_OFFICIAL_RECALL_MATCH (live:true) verified
+for the GreenWise card (lot 60401 + best-by 2028-02-09 + brand);
+POSSIBLE/NO_MATCH/INSUFFICIENT/tampered-passport levels all verified via API
+and E2E. openFDA: 2026 blueberries enforcement record does not exist yet
+(honestly surfaced). USDA FDC: correct host api.nal.usda.gov, DEMO_KEY
+throttled 10/hr, cached labeled sample fallback.
+
+**Suites (final):** contract 43/43 · gs1 22/22 (passport sign/tamper/QR,
+ECDH+AES-GCM disclosure) · schemas 4/4 · fixtures 8/8 · source-adapters 25/25
+· midnight-client 8/8 · **Playwright 20/20 (desktop+mobile)** · all TS clean ·
+production build passes.
+
+**Demo-ready state seeded:** Sentinel 2/3 signals, trace 2/3 proofs, live
+devnet mode, health checks green.
 
 ## Cockpit redesign pass (this session)
 

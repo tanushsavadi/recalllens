@@ -19,16 +19,27 @@ import { Badge } from "./ui";
 
 type Stage = "idle" | "camera" | "detecting" | "confirm" | "error";
 
-export interface ScanProductProps {
-  onConfirm: (fields: Gs1Data & { method: ScanMethod }) => void;
+export interface ScanConfirm extends Gs1Data {
+  method: ScanMethod;
+  /** the raw scanned QR/barcode payload (for passport signature extraction) */
+  rawText: string | null;
+  productName?: string;
 }
 
-export function ScanProduct({ onConfirm }: ScanProductProps) {
+export interface ScanProductProps {
+  onConfirm: (fields: ScanConfirm) => void;
+  /** show an optional product-name field (used by the consumer flow) */
+  allowProductName?: boolean;
+}
+
+export function ScanProduct({ onConfirm, allowProductName }: ScanProductProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [stage, setStage] = useState<Stage>("idle");
   const [method, setMethod] = useState<ScanMethod>("manual");
   const [fields, setFields] = useState<Gs1Data>({ gtin: "", lot: "", expiry: "" });
+  const [rawText, setRawText] = useState<string | null>(null);
+  const [productName, setProductName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [ocrRunning, setOcrRunning] = useState(false);
   const [permissionDenied, setPermissionDenied] = useState(false);
@@ -93,6 +104,7 @@ export function ScanProduct({ onConfirm }: ScanProductProps) {
     try {
       const parsed = parseScan(text);
       setFields(parsed.data);
+      setRawText(text);
       setMethod(m);
       setStage("confirm");
       setError(null);
@@ -139,6 +151,7 @@ export function ScanProduct({ onConfirm }: ScanProductProps) {
   function beginManual() {
     setMethod("manual");
     setFields({ gtin: "", lot: "", expiry: "" });
+    setRawText(null);
     setStage("confirm");
     setError(null);
   }
@@ -240,9 +253,16 @@ export function ScanProduct({ onConfirm }: ScanProductProps) {
             onChange={(v) => setFields((f) => ({ ...f, expiry: v }))}
             placeholder="2026-06-28"
           />
+          {allowProductName && (
+            <Field
+              label="Product name / brand (optional)"
+              value={productName}
+              onChange={setProductName}
+              placeholder="GreenWise Organic Frozen Blueberries"
+            />
+          )}
           <p className="text-[11px] text-slate-400">
-            You can correct any field before submitting. The GTIN + lot are used
-            only as lookup keys into the private vault.{" "}
+            You can correct any field before submitting.{" "}
             {method === "ocr" && (
               <span>OCR results often need a correction — please verify.</span>
             )}
@@ -250,10 +270,17 @@ export function ScanProduct({ onConfirm }: ScanProductProps) {
           <div className="flex gap-2">
             <button
               className="btn-primary flex-1"
-              disabled={!/^\d{8,14}$/.test(fields.gtin) || !fields.lot}
-              onClick={() => onConfirm({ ...fields, method })}
+              disabled={!/^\d{8,14}$/.test(fields.gtin) || (!fields.lot && !allowProductName)}
+              onClick={() =>
+                onConfirm({
+                  ...fields,
+                  method,
+                  rawText,
+                  productName: productName || undefined,
+                })
+              }
             >
-              Confirm &amp; check privately
+              Confirm &amp; verify
             </button>
             <button
               className="btn-ghost"

@@ -4,86 +4,101 @@ const CASE_ID =
   "cdc07260cc10ee5511223344556677889900aabbccddeeff0011223344556677";
 const API = "http://127.0.0.1:8787/api";
 
-// Reset the deterministic-fallback demo state so each stateful test starts
-// from the same pre-submitted (2/3) baseline. No-op against a live backend.
+// Deterministic reset before each stateful test (fallback backend).
 test.beforeEach(async ({ request }) => {
   await request.post(`${API}/case/${CASE_ID}/reset`).catch(() => {});
 });
 
-/**
- * Central P0 demo journey:
- *   1. Dashboard loads official outbreak info (live or cached).
- *   2. Source provenance visible.
- *   3. Investigator opens the case (Investigation).
- *   4. Three synthetic orgs submit matching private records.
- *   5. Public state updates (match count climbs).
- *   6. Reaches verified common-lineage convergence.
- *   7. No unrelated private record appears in displayed public state.
- *   8. User can inspect what is private vs disclosed.
- */
-test("central demo: dashboard → 3 proofs → verified convergence", async ({
-  page,
-}) => {
-  // 1 + 2: cockpit hero + provenance (hero is always visible on both viewports)
+test("Command Center: lifecycle story + official case + provenance", async ({ page }) => {
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { name: /Cyclospora Outbreak/i }),
+    page.getByRole("heading", { name: /Detect risk early\. Trace it without exposing/i }),
   ).toBeVisible();
-  await expect(
-    page.getByText(/LIVE official source|CACHED official snapshot/i),
-  ).toBeVisible();
-  // provenance link to the official CDC page (hero)
-  await expect(
-    page.getByRole("link", { name: /Official CDC page/i }),
-  ).toBeVisible();
-
-  // Proof status widget (top-right) reflects on-chain state
-  await expect(
-    page.getByText(/Proving \d\/\d|Common origin verified/i),
-  ).toBeVisible();
-
-  // 3: open the investigation (nav pill — first match; hero also links there)
-  await page.getByRole("link", { name: /^Investigate$/i }).first().click();
-  await expect(
-    page.getByRole("heading", { name: /Investigation Workspace/i }),
-  ).toBeVisible();
-
-  // 4 + 5: run private matches until convergence. Click the "Run private match"
-  // button while it is present + enabled; each click advances the next org.
-  // Stop as soon as the converged panel appears.
-  const converged = page.getByText("Common lineage verified");
-  for (let i = 0; i < 4; i++) {
-    if (await converged.isVisible().catch(() => false)) break;
-    const runButton = page.getByRole("button", { name: /Run private match —/i });
-    if (!(await runButton.isVisible().catch(() => false))) break;
-    await expect(runButton).toBeEnabled({ timeout: 15_000 });
-    await runButton.click();
-    // Let the mutation + cache update settle, then loop (re-resolves next org).
-    await page.waitForTimeout(2000);
+  // lifecycle strip
+  for (const s of ["Detect", "Verify", "Hold", "Trace", "Recall", "Protect"]) {
+    await expect(page.getByText(s, { exact: true }).first()).toBeVisible();
   }
-
-  // 6: verified convergence
-  await expect(converged).toBeVisible({ timeout: 25_000 });
+  // two guided demos
+  await expect(page.getByRole("link", { name: /Run Sentinel replay/i })).toBeVisible();
   await expect(
-    page.getByText(/3 independent credentialed organizations/i),
+    page.getByRole("link", { name: /Scan an official recall test card/i }),
   ).toBeVisible();
-  await expect(
-    page.getByText(/0 raw partner records written to the public ledger/i),
-  ).toBeVisible();
+  // real current case + provenance
+  await expect(page.getByText(/LIVE official source|CACHED official snapshot/i)).toBeVisible();
+  await expect(page.getByRole("link", { name: /Official CDC page/i })).toBeVisible();
+  await expect(page.getByText(/Synthetic demonstration data/i).first()).toBeVisible();
+});
 
-  // 7 + 8: public ledger panel shows only opaque hashes/counts (no raw records)
+test("role-correct end-to-end: sentinel → hold → request → partner scan+approve → shared lineage", async ({
+  page,
+}) => {
+  /* SENTINEL: starts at 2 signals; owner approves the third */
+  await page.goto("/sentinel");
+  await expect(page.getByText(/Synthetic pre-outbreak replay/i).first()).toBeVisible();
+  await expect(page.getByText(/EXPOSURE CLUSTER SIGNAL/i)).toBeVisible();
+  await page.getByRole("button", { name: /Review as owner/i }).click();
+  await expect(page.getByText(/Acting as QuickServe/i)).toBeVisible();
+  await page.getByRole("button", { name: /Approve final signal proof/i }).click();
+  await expect(page.getByText(/Early risk convergence detected/i)).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect(page.getByText(/not yet a confirmed outbreak/i)).toBeVisible();
+
+  /* HOLD */
+  await page.getByRole("button", { name: /Issue confidential precautionary hold/i }).click();
+  await expect(page.getByText(/Precautionary hold active/i)).toBeVisible({ timeout: 20_000 });
+
+  /* INVESTIGATOR: request only — no proof button exists */
+  await page.goto("/investigation");
+  await expect(page.getByText(/You cannot generate a partner's proof/i)).toBeVisible();
+  await expect(page.getByRole("button", { name: /Run private match/i })).toHaveCount(0);
+  await page.getByRole("button", { name: /Send private-match request/i }).click();
+  await expect(page.getByText(/Awaiting partner|scanned|requested/i).first()).toBeVisible();
+
+  /* PARTNER: Meridian scans its own label then approves */
+  await page.goto("/vault");
+  await page.getByRole("button", { name: /Meridian Cold Chain/i }).click();
+  await expect(page.getByText(/Requested predicate/i)).toBeVisible();
+  await page.getByRole("button", { name: /Enter values manually/i }).click();
+  await page.getByRole("textbox", { name: /GTIN/i }).fill("00810099110042");
+  await page.getByRole("textbox", { name: /Lot \/ batch/i }).fill("NFP-SHRED-26164-07");
+  await page.getByRole("button", { name: /Confirm & verify/i }).click();
+  await expect(page.getByText(/Committed record located/i)).toBeVisible({ timeout: 15_000 });
+  await page.getByRole("button", { name: /Approve and generate private proof/i }).click();
+  await expect(page.getByText(/Your proof settled on Midnight/i)).toBeVisible({
+    timeout: 30_000,
+  });
+
+  /* INVESTIGATOR: shared lineage verified (never "origin") */
+  await page.goto("/investigation");
+  await expect(page.getByText(/Shared supply lineage verified/i)).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect(
+    page.getByText(/does not independently establish contamination or causation/i),
+  ).toBeVisible();
+  await expect(page.getByText(/Common origin verified/i)).toHaveCount(0);
+  // public panel stays opaque
   await expect(page.getByText(/Public ledger — what was recorded/i)).toBeVisible();
-  await expect(page.getByText(/Distinct-org nullifiers/i)).toBeVisible();
-  // No supplier name / lot code leaks into the public panel
   await expect(page.getByText(/SVG-ICE-/)).toHaveCount(0);
 });
 
-test("consumer receipt check returns deterministic affected result", async ({ page }) => {
-  await page.goto("/consumer");
-  await page.getByRole("button", { name: /Use a receipt/i }).click();
-  await page.getByRole("button", { name: /Check against affected lineage/i }).click();
-  await expect(page.getByText(/Affected purchase detected/i)).toBeVisible();
-  await expect(
-    page.getByRole("link", { name: /safety guidance/i }),
-  ).toBeVisible();
+test("investigator/consumer cannot run a partner proof (API role guards)", async ({
+  request,
+}) => {
+  // legacy endpoint removed
+  const legacy = await request.post(`${API}/case/prove`, {
+    data: { caseId: CASE_ID, orgId: "org-meridian" },
+  });
+  expect(legacy.status()).toBe(404);
+  // approval without the partner's own scan is rejected
+  const approve = await request.post(`${API}/partner/approve`, {
+    data: { caseId: CASE_ID, actingOrgId: "org-meridian" },
+  });
+  expect(approve.status()).toBe(403);
+  // wrong org cannot approve another org's sentinel signal
+  const sig = await request.post(`${API}/sentinel/approve-signal`, {
+    data: { caseId: CASE_ID, signalId: "sig-exposure-1", actingOrgId: "org-sierra-verde" },
+  });
+  expect(sig.status()).toBe(403);
 });

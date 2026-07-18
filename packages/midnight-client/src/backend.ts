@@ -40,4 +40,23 @@ export interface ChainBackend {
    * on-chain proofs, so it is a no-op there (re-seed via the deploy script).
    */
   reset?(caseId: string): Promise<void>;
+
+  /* ── Sentinel operations (optional until the extended contract lands) ──
+   * Where implemented against the live devnet these run genuine circuits
+   * (submitSafetySignal / issuePrecautionaryHold / authorizeRecallPredicate)
+   * and return the settled txId. The fallback returns txId: null so the UI
+   * can never present a fabricated transaction. */
+  submitSentinelSignal?(
+    caseId: string,
+    orgId: string,
+    category: string,
+  ): Promise<{ txId: string | null; nullifier: string | null }>;
+  issueHold?(
+    caseId: string,
+    holdCommitment: string,
+  ): Promise<{ txId: string | null }>;
+  authorizeRecall?(
+    caseId: string,
+    predicateHash: string,
+  ): Promise<{ txId: string | null }>;
 }

@@ -68,6 +68,47 @@ export struct CaseInfo {
   open: Boolean; // whether the case still accepts proofs
 }
 
+// ---------------------------------------------------------------------------
+// SENTINEL LAYER — early-warning "corroborated risk convergence".
+// ---------------------------------------------------------------------------
+// A Sentinel case detects the situation where multiple INDEPENDENT credentialed
+// organizations privately report safety SIGNALS (a failed QA test, a cold-chain
+// excursion, an exposure-cluster aggregate) that all bind to the SAME hidden
+// lineage token. When a transparent threshold policy is met, an investigator
+// (the registrar) can anchor a precautionary HOLD and later authorize a recall
+// predicate. The Sentinel layer reuses the credential / commitment / tag /
+// nullifier machinery of the outbreak-traceback layer above.
+
+// Off-chain safety-signal fields, provided by the prover's witness. Like
+// TraceEvent, these never reach the ledger; only a commitment over them is
+// committed (into the SAME eventTree, under a distinct domain separator).
+//   - lineageToken: high-entropy random Bytes<32> shared across the synthetic
+//                   supply chain. Convergence of independent signals on one
+//                   lineage token is exactly what a Sentinel case detects.
+//   - productHash:  hash of the product/predicate this signal pertains to.
+//   - signalTime:   Unix-seconds timestamp of the signal.
+//   - category:     signal class — 1 = QA (high-confidence), 2 = COLD_CHAIN,
+//                   3 = EXPOSURE. Bound in-circuit to the public circuit arg.
+//   - blinding:     per-signal random blinding so identical (lineage, product,
+//                   time, category) signals still produce distinct commitments.
+export struct SafetySignal {
+  lineageToken: Bytes<32>;
+  productHash: Bytes<32>;
+  signalTime: Uint<64>;
+  category: Uint<8>;
+  blinding: Bytes<32>;
+}
+
+// Public Sentinel case definition, recorded by openSentinelCase. A distinct
+// namespace from CaseInfo/`cases` — a Sentinel case is a forward-looking watch,
+// not a confirmed outbreak. Every field is intentionally public.
+export struct SentinelCaseInfo {
+  productHash: Bytes<32>; // product predicate a signal must match
+  windowStart: Uint<64>; // inclusive lower bound on signal time
+  windowEnd: Uint<64>; // inclusive upper bound on signal time
+  open: Boolean; // whether the case still accepts signals
+}
+
 // ============================================================================
 // LEDGER STATE (kept minimal)
 // ============================================================================
@@ -110,6 +151,51 @@ export sealed ledger threshold: Uint<64>;
 // is a hash of a high-entropy secret; the secret itself never reaches the chain).
 export sealed ledger registrarCommitment: Bytes<32>;
 
+// --- SENTINEL LAYER state ---------------------------------------------------
+// (See the SENTINEL LAYER type block above and the SECURITY NOTES at the bottom.)
+
+// Public Sentinel case definitions, keyed by caseId. Distinct namespace from
+// `cases` so the two layers never collide.
+export ledger sentinelCases: Map<Bytes<32>, SentinelCaseInfo>;
+
+// Per-sentinelTag count of accepted, distinct-org signals. Because the sentinel
+// nullifier is per (caseId, orgSecret) — one signal per org per case — this count
+// is ALSO the distinct-org count by construction, so no separate org-count map is
+// kept (that would be redundant). Hence "N signals" always means "N distinct orgs".
+export ledger signalCount: Map<Bytes<32>, Counter>;
+
+// Per-sentinelTag category-presence flags. Only `true` is ever stored, so
+// `.member(tag)` alone answers "has a signal of this category been seen for this
+// tag?" — no value read needed. These three maps make the category-diversity and
+// "≥1 QA (high-confidence)" policy publicly checkable. Category diversity is
+// computed on the fly from these three flags (no separate diversity counter is
+// kept). QA == category 1, COLD_CHAIN == 2, EXPOSURE == 3.
+export ledger sentinelQaSeen: Map<Bytes<32>, Boolean>; // category 1 (high-confidence)
+
+export ledger sentinelColdSeen: Map<Bytes<32>, Boolean>; // category 2
+
+export ledger sentinelExposureSeen: Map<Bytes<32>, Boolean>; // category 3
+
+// Spent sentinel nullifiers. One per (caseId, orgSecret): a given registered org
+// counts AT MOST ONCE per sentinel case, regardless of how many categories it
+// could report. This is what makes category diversity meaningful — a single org
+// cannot manufacture diversity by itself; distinct categories must come from
+// distinct orgs. Domain-separated from orgNullifiers by prefix.
+export ledger sentinelNullifiers: Set<Bytes<32>>;
+
+// sentinelTag -> threshold policy satisfied?  Absence is `false`; a `true` entry
+// is written once the fixed demo policy is met (see submitSafetySignal step h).
+export ledger sentinelThresholdReached: Map<Bytes<32>, Boolean>;
+
+// caseId -> holdCommitment. An opaque commitment to the affected product-passport
+// set (e.g. a Merkle root of passport commitments), computed off-chain by the
+// investigator. Anchored by issuePrecautionaryHold after the threshold is met.
+export ledger holds: Map<Bytes<32>, Bytes<32>>;
+
+// caseId -> authorized recall predicate hash. Recorded by authorizeRecallPredicate
+// once a precautionary hold exists for the case.
+export ledger recallAuthorizations: Map<Bytes<32>, Bytes<32>>;
+
 // ============================================================================
 // WITNESSES (off-chain, private, untrusted-by-the-contract inputs)
 // ============================================================================
@@ -132,6 +218,12 @@ witness getEventPath(commitment: Bytes<32>): MerkleTreePath<10, Bytes<32>>;
 
 // Merkle authentication path for a given org commitment.
 witness getOrgPath(orgCommitment: Bytes<32>): MerkleTreePath<10, Bytes<32>>;
+
+// The raw safety signal the prover claims to hold (SENTINEL layer). Consumed by
+// submitSafetySignal. Reuses the existing eventTree for its commitment (under a
+// distinct domain separator) and getEventPath for the membership proof, so no new
+// tree or path witness is required.
+witness getSafetySignal(): SafetySignal;
 
 // ============================================================================
 // DOMAIN-SEPARATED DERIVATIONS
@@ -176,6 +268,44 @@ export pure circuit deriveOrgNullifier(caseId: Bytes<32>, orgSecret: Bytes<32>):
 // registrarCommitment = H("rl:registrar:v1", registrarSecret)
 export pure circuit deriveRegistrarCommitment(registrarSecret: Bytes<32>): Bytes<32> {
   return persistentHash<Vector<2, Bytes<32>>>([pad(32, "rl:registrar:v1"), registrarSecret]);
+}
+
+// --- SENTINEL layer derivations ---------------------------------------------
+// Distinct domain separators from the outbreak-traceback derivations above, so a
+// signal commitment can never be confused with an event commitment, a sentinel
+// tag with a caseTag, or a sentinel nullifier with an orgNullifier — even when
+// the underlying byte inputs coincide.
+
+// signalCommitment = H("rl:signal:v1", lineageToken, productHash, signalTime, category, blinding)
+// Stored in the SAME eventTree as trace events; the distinct prefix keeps the two
+// commitment families disjoint. category is widened to Bytes<32> via Field.
+export pure circuit deriveSignalCommitment(
+                      lineageToken: Bytes<32>,
+                      productHash: Bytes<32>,
+                      signalTime: Uint<64>,
+                      category: Uint<8>,
+                      blinding: Bytes<32>
+                      ): Bytes<32> {
+  return persistentHash<Vector<6, Bytes<32>>>(
+           [pad(32, "rl:signal:v1"),
+            lineageToken,
+            productHash,
+            (signalTime as Field) as Bytes<32>,
+            (category as Field) as Bytes<32>,
+            blinding]
+           );
+}
+
+// sentinelTag = H("rl:stag:v1", caseId, lineageToken)
+export pure circuit deriveSentinelTag(caseId: Bytes<32>, lineageToken: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<3, Bytes<32>>>([pad(32, "rl:stag:v1"), caseId, lineageToken]);
+}
+
+// signalNullifier = H("rl:snull:v1", caseId, orgSecret)
+// Per (caseId, orgSecret): one signal per org per sentinel case, regardless of
+// category. Domain-separated from orgNullifier so the two layers are unlinkable.
+export pure circuit deriveSignalNullifier(caseId: Bytes<32>, orgSecret: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<3, Bytes<32>>>([pad(32, "rl:snull:v1"), caseId, orgSecret]);
 }
 
 // ============================================================================
@@ -264,6 +394,29 @@ export circuit closeCase(caseId: Bytes<32>): [] {
     );
 }
 
+// Record a public Sentinel case definition. Distinct namespace from openCase —
+// a Sentinel case is a forward-looking watch, not a confirmed outbreak. All
+// fields are public. Registrar-gated: only the registrar may open Sentinel cases,
+// preventing bogus-case spam that could dilute or fabricate risk signals.
+export circuit openSentinelCase(
+                 caseId: Bytes<32>,
+                 productHash: Bytes<32>,
+                 windowStart: Uint<64>,
+                 windowEnd: Uint<64>
+                 ): [] {
+  assertRegistrar();
+  const cid = disclose(caseId);
+  assert(!sentinelCases.member(cid), "Sentinel case already exists");
+  assert(disclose(windowStart <= windowEnd), "Invalid window: start after end");
+  sentinelCases.insert(
+    cid,
+    disclose(SentinelCaseInfo { productHash: productHash,
+                                windowStart: windowStart,
+                                windowEnd: windowEnd,
+                                open: true })
+    );
+}
+
 // THE CORE ZK CIRCUIT.
 //
 // The prover demonstrates, in zero knowledge, that:
@@ -334,6 +487,151 @@ export circuit proveRelevantEvent(caseId: Bytes<32>): [] {
 }
 
 // ============================================================================
+// SENTINEL CIRCUITS
+// ============================================================================
+
+// THE CORE SENTINEL ZK CIRCUIT.
+//
+// A registered organization privately reports one safety SIGNAL against an open
+// Sentinel case, proving in zero knowledge that:
+//   (a) it holds a registered organization credential,
+//   (b) it holds a signal committed to the event tree,
+//   (c) the signal matches the case's product predicate and time window, and its
+//       category equals the public `category` argument and is one of {1,2,3},
+// contributing exactly one distinct-org signal to the case's hidden lineage tag.
+// The category-seen flags, signal count, and threshold flag are updated in-circuit.
+//
+// THRESHOLD POLICY (fixed demo constants — see SECURITY NOTES "Sentinel policy"):
+//   >= 3 valid signals, from >= 2 distinct orgs, spanning >= 2 distinct categories,
+//   including >= 1 QA (category 1, high-confidence) signal, all on the SAME lineage
+//   tag, all inside the case window.
+// Because the sentinel nullifier is per (caseId, orgSecret) — one signal per org
+// per case — 3 accepted signals necessarily come from 3 distinct orgs, so the
+// ">= 2 distinct orgs" clause is implied by ">= 3 signals". The demo policy is thus
+// effectively: 3 signals from 3 distinct orgs, >= 2 categories, >= 1 QA.
+export circuit submitSafetySignal(caseId: Bytes<32>, category: Uint<8>): [] {
+  // caseId is a public argument (intentionally disclosed — it identifies the case).
+  const cid = disclose(caseId);
+  assert(sentinelCases.member(cid), "Unknown sentinel case");
+  const sc = sentinelCases.lookup(cid);
+  assert(sc.open, "Sentinel case is closed");
+
+  // The category is public by design (recorded in the category-seen maps below).
+  // Range-check it to the three defined classes: QA=1, COLD_CHAIN=2, EXPOSURE=3.
+  const cat = disclose(category);
+  assert(cat >= 1, "Category out of range");
+  assert(cat <= 3, "Category out of range");
+
+  // --- (a) Recompute the org commitment and prove registry membership. ---
+  // Identical to proveRelevantEvent (b): binds the witness path to the derived
+  // commitment, then discloses only the leaf-independent ROOT.
+  const orgSecret = getOrgSecret();
+  const orgCommitment = deriveOrgCommitment(orgSecret);
+  const orgPath = getOrgPath(orgCommitment);
+  assert(disclose(orgPath.leaf == orgCommitment), "Org path does not match the org credential");
+  assert(orgRegistry.checkRoot(disclose(merkleTreePathRoot<10, Bytes<32>>(orgPath))),
+         "Organization is not registered"
+         );
+
+  // --- (b) Recompute the signal commitment and prove event-tree membership. ---
+  // Signals reuse the eventTree under a distinct domain separator ("rl:signal:v1").
+  const sig = getSafetySignal();
+  const signalCommitment =
+          deriveSignalCommitment(
+            sig.lineageToken,
+            sig.productHash,
+            sig.signalTime,
+            sig.category,
+            sig.blinding
+            );
+  const signalPath = getEventPath(signalCommitment);
+  // Bind the supplied path to the commitment we derived from the witness fields
+  // (same tamper-/absence-detection rationale as proveRelevantEvent).
+  assert(disclose(signalPath.leaf == signalCommitment),
+         "Signal path does not match the committed signal"
+         );
+  assert(eventTree.checkRoot(disclose(merkleTreePathRoot<10, Bytes<32>>(signalPath))),
+         "Signal is not committed in the event tree"
+         );
+
+  // --- (c) Bind the committed category to the public arg; enforce the predicate. ---
+  assert(disclose(sig.category == cat), "Signal category mismatch");
+  assert(disclose(sig.productHash == sc.productHash), "Product predicate mismatch");
+  assert(disclose(sig.signalTime >= sc.windowStart), "Signal time before case window");
+  assert(disclose(sig.signalTime <= sc.windowEnd), "Signal time after case window");
+
+  // --- (d) Derive and disclose the sentinelTag (the only lineage-linked value). ---
+  const tag = disclose(deriveSentinelTag(cid, sig.lineageToken));
+
+  // --- (e) Derive/disclose the signal nullifier; one org counts once per case. ---
+  const nullifier = disclose(deriveSignalNullifier(cid, orgSecret));
+  assert(!sentinelNullifiers.member(nullifier),
+         "Organization already submitted a signal for this case"
+         );
+  sentinelNullifiers.insert(nullifier);
+
+  // --- (f) Bump the signal count for this tag (== distinct-org count, by (e)). ---
+  if (!signalCount.member(tag)) {
+    signalCount.insert(tag, default<Counter>);
+  }
+  signalCount.lookup(tag).increment(1);
+
+  // --- (g) Mark this category as seen for the tag (idempotent — only `true` stored). ---
+  if (cat == 1) {
+    sentinelQaSeen.insert(tag, true);
+  } else {
+    if (cat == 2) {
+      sentinelColdSeen.insert(tag, true);
+    } else {
+      sentinelExposureSeen.insert(tag, true);
+    }
+  }
+
+  // --- (h) Threshold-policy check: flip the flag when all clauses hold. ---
+  // Category diversity is derived on the fly from the three seen-flags (each a
+  // public ledger read). All operands here are public, so no disclose is needed.
+  const qaSeen = sentinelQaSeen.member(tag);
+  const diversity =
+          (qaSeen ? 1 : 0) +
+          (sentinelColdSeen.member(tag) ? 1 : 0) +
+          (sentinelExposureSeen.member(tag) ? 1 : 0);
+  if (signalCount.lookup(tag).read() >= 3 && diversity >= 2 && qaSeen) {
+    sentinelThresholdReached.insert(tag, true);
+  }
+}
+
+// Anchor a precautionary hold once a sentinel tag has met the threshold policy.
+// Registrar-gated. The registrar supplies the caseId, the sentinelTag that reached
+// threshold (a public value emitted by submitSafetySignal), and an opaque
+// holdCommitment (e.g. a Merkle root over the affected product-passport
+// commitments, computed off-chain). See SECURITY NOTES "Sentinel hold binding".
+export circuit issuePrecautionaryHold(
+                 caseId: Bytes<32>,
+                 sentinelTag: Bytes<32>,
+                 holdCommitment: Bytes<32>
+                 ): [] {
+  assertRegistrar();
+  const cid = disclose(caseId);
+  assert(sentinelCases.member(cid), "Unknown sentinel case");
+  const tag = disclose(sentinelTag);
+  // Absence => not reached; a `true` entry is only ever written when the policy is
+  // satisfied, so membership alone is the "threshold reached" test.
+  assert(sentinelThresholdReached.member(tag), "Sentinel threshold not reached for this tag");
+  assert(!holds.member(cid), "Hold already issued for this case");
+  holds.insert(cid, disclose(holdCommitment));
+}
+
+// Authorize a recall predicate for a case that already has a precautionary hold.
+// Registrar-gated. predicateHash is an opaque, off-chain-defined recall scope.
+export circuit authorizeRecallPredicate(caseId: Bytes<32>, predicateHash: Bytes<32>): [] {
+  assertRegistrar();
+  const cid = disclose(caseId);
+  assert(holds.member(cid), "No precautionary hold exists for this case");
+  assert(!recallAuthorizations.member(cid), "Recall predicate already authorized for this case");
+  recallAuthorizations.insert(cid, disclose(predicateHash));
+}
+
+// ============================================================================
 // SECURITY NOTES
 // ============================================================================
 //
@@ -378,3 +676,52 @@ export circuit proveRelevantEvent(caseId: Bytes<32>): [] {
 //
 // commitTraceEvent is intentionally NOT registrar-gated: an opaque event leaf is
 //   inert until a registered org proves it relevant to a registrar-opened case.
+//
+// ---------------------------------------------------------------------------
+// SENTINEL LAYER
+// ---------------------------------------------------------------------------
+//
+// Sentinel policy (fixed demo constants). submitSafetySignal flips
+//   sentinelThresholdReached[tag] when: signalCount[tag] >= 3, category diversity
+//   >= 2 (of QA/COLD_CHAIN/EXPOSURE), and >= 1 QA (category 1) signal present. The
+//   constants 3 and 2 are demonstration values chosen for the RecallLens demo, not
+//   an epidemiological standard; a production deployment would parameterize them
+//   (e.g. sealed ledger fields set at deploy) and likely weight categories.
+//
+// Sentinel nullifier scope. signalNullifier = H("rl:snull:v1", caseId, orgSecret)
+//   is per (caseId, orgSecret): one registered org counts AT MOST ONCE per Sentinel
+//   case, INDEPENDENT of category. This is deliberate — it prevents a single org
+//   from manufacturing "category diversity" by submitting all three categories
+//   itself. Category diversity is therefore only ever produced by DISTINCT orgs
+//   reporting DISTINCT categories. As a corollary, signalCount == distinct-org
+//   count by construction, so no separate org-count map is stored, and the
+//   ">= 2 distinct orgs" clause of the policy is implied by ">= 3 signals". It does
+//   NOT stop two DIFFERENT credentials — same residual registrar trust as above.
+//
+// Sentinel disclosure surface. submitSafetySignal discloses: caseId (public arg),
+//   the category (1..3; public by design so the diversity/QA policy is auditable),
+//   the two leaf-independent Merkle ROOTS (org registry + event tree), the
+//   sentinelTag = H(caseId, lineageToken), the signalNullifier, and a set of
+//   booleans that are all necessarily `true` on success (path/leaf bindings,
+//   category match, product-predicate match, window bounds). It never reveals which
+//   org proved, which committed signal matched, the org secret, the lineage token,
+//   the blinding, or the exact signal time. Note the category IS public — it is the
+//   one field the outbreak layer keeps implicit that the Sentinel layer must expose
+//   to make the diversity/high-confidence policy publicly checkable.
+//
+// Signals share the eventTree. Signal commitments are inserted into the SAME
+//   HistoricMerkleTree as trace events, under a distinct domain separator
+//   ("rl:signal:v1" vs "rl:event:v1"), so the two commitment families are
+//   cryptographically disjoint yet share (and enlarge) one anonymity set. commitSignal
+//   is not a separate circuit: clients call the existing commitTraceEvent with a
+//   deriveSignalCommitment(...) value (both just insert an opaque leaf).
+//
+// Sentinel hold binding. issuePrecautionaryHold takes the sentinelTag as a public
+//   argument and requires sentinelThresholdReached[tag]; it does NOT cryptographically
+//   bind the tag to the caseId on-chain (a registrar could pair a caseId with any
+//   tag that reached threshold). This is acceptable because the action is
+//   registrar-gated and the registrar is already the trust anchor; a stricter design
+//   could store tag->caseId at signal time. holdCommitment and predicateHash are
+//   opaque, off-chain-defined values (e.g. a passport-set Merkle root and a recall
+//   scope hash); the contract only anchors them and enforces ordering
+//   (threshold => hold => recall authorization), each recorded at most once per case.

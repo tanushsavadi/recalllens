@@ -6,14 +6,16 @@
 //
 // Reachable from here:
 //   - Contract, ledger, pureCircuits             (compiled contract runtime)
-//   - Ledger, TraceEvent, CaseInfo, Witnesses,
-//     ImpureCircuits, PureCircuits, ...           (generated types)
+//   - Ledger, TraceEvent, CaseInfo, SafetySignal,
+//     SentinelCaseInfo, Witnesses, ImpureCircuits,
+//     PureCircuits, ...                           (generated types)
 //   - witnesses, createRecallLensPrivateState,
 //     RecallLensPrivateState                      (witness layer)
 //
 // CLIENT/CIRCUIT HASH PARITY: compute eventCommitment / orgCommitment / caseTag /
-// orgNullifier via the re-exported `pureCircuits` object only — never a bespoke JS
-// hash — so off-chain values match the in-circuit derivations byte-for-byte.
+// orgNullifier — and the SENTINEL derivations signalCommitment / sentinelTag /
+// signalNullifier — via the re-exported `pureCircuits` object only, never a bespoke
+// JS hash, so off-chain values match the in-circuit derivations byte-for-byte.
 
 export * from "./managed/recalllens/contract/index.js";
 export * from "./witnesses.js";

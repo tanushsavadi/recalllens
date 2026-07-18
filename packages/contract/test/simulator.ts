@@ -130,6 +130,53 @@ export class RecallLensSimulator {
     this.persist(res);
   }
 
+  // --- Sentinel registrar-gated circuits ------------------------------------
+
+  public openSentinelCase(
+    caseId: Uint8Array,
+    productHash: Uint8Array,
+    windowStart: bigint,
+    windowEnd: bigint,
+    registrarSecret: Uint8Array,
+  ): void {
+    const res = this.contract.impureCircuits.openSentinelCase(
+      this.buildContext(registrarState(registrarSecret)),
+      caseId,
+      productHash,
+      windowStart,
+      windowEnd,
+    );
+    this.persist(res);
+  }
+
+  public issuePrecautionaryHold(
+    caseId: Uint8Array,
+    sentinelTag: Uint8Array,
+    holdCommitment: Uint8Array,
+    registrarSecret: Uint8Array,
+  ): void {
+    const res = this.contract.impureCircuits.issuePrecautionaryHold(
+      this.buildContext(registrarState(registrarSecret)),
+      caseId,
+      sentinelTag,
+      holdCommitment,
+    );
+    this.persist(res);
+  }
+
+  public authorizeRecallPredicate(
+    caseId: Uint8Array,
+    predicateHash: Uint8Array,
+    registrarSecret: Uint8Array,
+  ): void {
+    const res = this.contract.impureCircuits.authorizeRecallPredicate(
+      this.buildContext(registrarState(registrarSecret)),
+      caseId,
+      predicateHash,
+    );
+    this.persist(res);
+  }
+
   // --- Open circuits --------------------------------------------------------
 
   // commitTraceEvent is NOT registrar-gated (an opaque leaf is inert on its own).
@@ -151,6 +198,21 @@ export class RecallLensSimulator {
     const res = this.contract.impureCircuits.proveRelevantEvent(
       this.buildContext(proverState),
       caseId,
+    );
+    this.persist(res);
+  }
+
+  // The core Sentinel circuit. The prover's private state (org secret + held safety
+  // signal) is supplied per call. Open to any registered org — no registrar secret.
+  public submitSafetySignal(
+    caseId: Uint8Array,
+    category: bigint,
+    signalProverState: RecallLensPrivateState,
+  ): void {
+    const res = this.contract.impureCircuits.submitSafetySignal(
+      this.buildContext(signalProverState),
+      caseId,
+      category,
     );
     this.persist(res);
   }

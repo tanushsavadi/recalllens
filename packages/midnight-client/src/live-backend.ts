@@ -183,6 +183,37 @@ export class LiveDevnetBackend implements ChainBackend {
     this.proofs.set(orgId, { ...p, stage, ...patch, updatedAt: new Date().toISOString() });
   }
 
+  /* ── Sentinel operations — genuine circuits on the live devnet ── */
+
+  async submitSentinelSignal(
+    _caseId: string,
+    orgId: string,
+    category: string,
+  ): Promise<{ txId: string | null; nullifier: string | null }> {
+    const org = organizations.find((o) => o.orgId === orgId);
+    if (!org) throw new Error(`unknown org ${orgId}`);
+    const categoryNum =
+      category === "PROCESSOR_QA_SIGNAL" ? 1 : category === "COLD_CHAIN_SIGNAL" ? 2 : 3;
+    const session = await this.ensureSession();
+    const { submitSignalForOrg } = await import("./onchain");
+    const res = await submitSignalForOrg(session, this.contractAddress, org, categoryNum);
+    return { txId: res.txId, nullifier: res.nullifier };
+  }
+
+  async issueHold(_caseId: string, holdCommitment: string): Promise<{ txId: string | null }> {
+    const session = await this.ensureSession();
+    const { issueHoldOnChain } = await import("./onchain");
+    const txId = await issueHoldOnChain(session, this.contractAddress, holdCommitment);
+    return { txId };
+  }
+
+  async authorizeRecall(_caseId: string, predicateHash: string): Promise<{ txId: string | null }> {
+    const session = await this.ensureSession();
+    const { authorizeRecallOnChain } = await import("./onchain");
+    const txId = await authorizeRecallOnChain(session, this.contractAddress, predicateHash);
+    return { txId };
+  }
+
   async submitProof(
     _caseId: string,
     orgId: string,

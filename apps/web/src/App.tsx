@@ -4,6 +4,7 @@ import { CommandCenter } from "./pages/CommandCenter";
 import { InvestigationWorkspace } from "./pages/InvestigationWorkspace";
 import { PartnerVault } from "./pages/PartnerVault";
 import { ConsumerCheck } from "./pages/ConsumerCheck";
+import { Sentinel } from "./pages/Sentinel";
 import { DemoLabels } from "./labels/DemoLabels";
 import { GlobeStage } from "./components/globe/GlobeStage";
 import { WidgetDrawer } from "./components/WidgetDrawer";
@@ -11,6 +12,7 @@ import { useTheme } from "./lib/theme";
 
 const NAV = [
   { to: "/", label: "Command", icon: GlobeIcon, end: true },
+  { to: "/sentinel", label: "Sentinel", icon: RadarIcon },
   { to: "/investigation", label: "Investigate", icon: NodesIcon },
   { to: "/vault", label: "Vault", icon: VaultIcon },
   { to: "/consumer", label: "Scan", icon: ScanIcon },
@@ -102,6 +104,7 @@ export function App() {
       ) : (
         <main className="relative z-10 mx-auto w-full max-w-7xl px-4 pb-16 pt-24 sm:px-6">
           <Routes>
+            <Route path="/sentinel" element={<Sentinel />} />
             <Route path="/investigation" element={<InvestigationWorkspace />} />
             <Route path="/vault" element={<PartnerVault />} />
             <Route path="/consumer" element={<ConsumerCheck />} />
@@ -156,6 +159,14 @@ function TagIcon(_: I) {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
       <path d="M4 11V5a1 1 0 0 1 1-1h6l8 8-7 7-8-8Z" /><circle cx="8" cy="8" r="1.3" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+function RadarIcon(_: I) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+      <circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="4.5" />
+      <path d="M12 12l6-6" /><circle cx="12" cy="12" r="0.8" fill="currentColor" stroke="none" />
     </svg>
   );
 }

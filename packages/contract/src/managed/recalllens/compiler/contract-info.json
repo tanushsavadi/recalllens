@@ -129,6 +129,102 @@
       }
     },
     {
+      "name": "deriveSignalCommitment",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "lineageToken",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "productHash",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "signalTime",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 18446744073709551615
+          }
+        },
+        {
+          "name": "category",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 255
+          }
+        },
+        {
+          "name": "blinding",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "deriveSentinelTag",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "caseId",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "lineageToken",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "deriveSignalNullifier",
+      "pure": true,
+      "proof": false,
+      "arguments": [
+        {
+          "name": "caseId",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "orgSecret",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
       "name": "registerOrganization",
       "pure": false,
       "proof": true,
@@ -233,12 +329,137 @@
       }
     },
     {
+      "name": "openSentinelCase",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "caseId",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "productHash",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "windowStart",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 18446744073709551615
+          }
+        },
+        {
+          "name": "windowEnd",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 18446744073709551615
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
       "name": "proveRelevantEvent",
       "pure": false,
       "proof": true,
       "arguments": [
         {
           "name": "caseId",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "submitSafetySignal",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "caseId",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "category",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 255
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "issuePrecautionaryHold",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "caseId",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "sentinelTag",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "holdCommitment",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "authorizeRecallPredicate",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "caseId",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "predicateHash",
           "type": {
             "type-name": "Bytes",
             "length": 32
@@ -427,6 +648,52 @@
           }
         ]
       }
+    },
+    {
+      "name": "getSafetySignal",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Struct",
+        "name": "SafetySignal",
+        "elements": [
+          {
+            "name": "lineageToken",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          },
+          {
+            "name": "productHash",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          },
+          {
+            "name": "signalTime",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 18446744073709551615
+            }
+          },
+          {
+            "name": "category",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 255
+            }
+          },
+          {
+            "name": "blinding",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          }
+        ]
+      }
     }
   ],
   "contracts": [
@@ -434,7 +701,10 @@
   "ledger": [
     {
       "name": "orgRegistry",
-      "index": 0,
+      "index": [
+        0,
+        0
+      ],
       "exported": true,
       "storage": "HistoricMerkleTree",
       "depth": 10,
@@ -445,7 +715,10 @@
     },
     {
       "name": "eventTree",
-      "index": 1,
+      "index": [
+        0,
+        1
+      ],
       "exported": true,
       "storage": "HistoricMerkleTree",
       "depth": 10,
@@ -456,7 +729,10 @@
     },
     {
       "name": "cases",
-      "index": 2,
+      "index": [
+        1,
+        0
+      ],
       "exported": true,
       "storage": "Map",
       "key": {
@@ -506,7 +782,10 @@
     },
     {
       "name": "matchCount",
-      "index": 3,
+      "index": [
+        1,
+        1
+      ],
       "exported": true,
       "storage": "Map",
       "key": {
@@ -519,7 +798,10 @@
     },
     {
       "name": "orgNullifiers",
-      "index": 4,
+      "index": [
+        1,
+        2
+      ],
       "exported": true,
       "storage": "Set",
       "type": {
@@ -529,7 +811,10 @@
     },
     {
       "name": "converged",
-      "index": 5,
+      "index": [
+        1,
+        3
+      ],
       "exported": true,
       "storage": "Map",
       "key": {
@@ -542,7 +827,10 @@
     },
     {
       "name": "threshold",
-      "index": 6,
+      "index": [
+        1,
+        4
+      ],
       "exported": true,
       "storage": "Cell",
       "type": {
@@ -552,10 +840,186 @@
     },
     {
       "name": "registrarCommitment",
-      "index": 7,
+      "index": [
+        1,
+        5
+      ],
       "exported": true,
       "storage": "Cell",
       "type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "sentinelCases",
+      "index": [
+        1,
+        6
+      ],
+      "exported": true,
+      "storage": "Map",
+      "key": {
+        "type-name": "Bytes",
+        "length": 32
+      },
+      "value": {
+        "type-name": "Struct",
+        "name": "SentinelCaseInfo",
+        "elements": [
+          {
+            "name": "productHash",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          },
+          {
+            "name": "windowStart",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 18446744073709551615
+            }
+          },
+          {
+            "name": "windowEnd",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 18446744073709551615
+            }
+          },
+          {
+            "name": "open",
+            "type": {
+              "type-name": "Boolean"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "signalCount",
+      "index": [
+        1,
+        7
+      ],
+      "exported": true,
+      "storage": "Map",
+      "key": {
+        "type-name": "Bytes",
+        "length": 32
+      },
+      "value": {
+        "type-name": "Counter"
+      }
+    },
+    {
+      "name": "sentinelQaSeen",
+      "index": [
+        1,
+        8
+      ],
+      "exported": true,
+      "storage": "Map",
+      "key": {
+        "type-name": "Bytes",
+        "length": 32
+      },
+      "value": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "sentinelColdSeen",
+      "index": [
+        1,
+        9
+      ],
+      "exported": true,
+      "storage": "Map",
+      "key": {
+        "type-name": "Bytes",
+        "length": 32
+      },
+      "value": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "sentinelExposureSeen",
+      "index": [
+        1,
+        10
+      ],
+      "exported": true,
+      "storage": "Map",
+      "key": {
+        "type-name": "Bytes",
+        "length": 32
+      },
+      "value": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "sentinelNullifiers",
+      "index": [
+        1,
+        11
+      ],
+      "exported": true,
+      "storage": "Set",
+      "type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "sentinelThresholdReached",
+      "index": [
+        1,
+        12
+      ],
+      "exported": true,
+      "storage": "Map",
+      "key": {
+        "type-name": "Bytes",
+        "length": 32
+      },
+      "value": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "holds",
+      "index": [
+        1,
+        13
+      ],
+      "exported": true,
+      "storage": "Map",
+      "key": {
+        "type-name": "Bytes",
+        "length": 32
+      },
+      "value": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "recallAuthorizations",
+      "index": [
+        1,
+        14
+      ],
+      "exported": true,
+      "storage": "Map",
+      "key": {
+        "type-name": "Bytes",
+        "length": 32
+      },
+      "value": {
         "type-name": "Bytes",
         "length": 32
       }

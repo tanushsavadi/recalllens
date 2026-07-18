@@ -21,6 +21,9 @@ import {
   registerAndCommit,
   openDemoCase,
   proveForOrg,
+  openSentinelCaseOnChain,
+  commitSignalForOrg,
+  submitSignalForOrg,
 } from "../onchain";
 import { saveDeployment } from "../deployment";
 
@@ -56,11 +59,13 @@ async function main() {
     const address = await deployRecallLens(session);
     console.log(`✅ deployed: ${address}`);
 
-    const proveable = organizations
-      .filter((o) => affectedEvents[o.orgId])
-      .slice(0, DEMO_CASE.convergenceThreshold);
+    // Register ALL orgs with affected events (incl. QuickServe, which owns the
+    // live exposure-cluster Sentinel signal); the trace convergence still uses
+    // the first three.
+    const allOrgs = organizations.filter((o) => affectedEvents[o.orgId]);
+    const proveable = allOrgs.slice(0, DEMO_CASE.convergenceThreshold);
 
-    for (const org of proveable) {
+    for (const org of allOrgs) {
       const { registerTx, commitTx } = await registerAndCommit(session, address, org);
       console.log(`  registered ${org.name}  reg=${registerTx.slice(0, 10)} commit=${commitTx.slice(0, 10)}`);
     }
@@ -68,6 +73,29 @@ async function main() {
     const sourceHash = cdcSnapshotHash();
     const caseTx = await openDemoCase(session, address, sourceHash);
     console.log(`  opened case ${DEMO_CASE.caseId.slice(0, 12)}… tx=${caseTx.slice(0, 10)} sourceHash=${sourceHash.slice(0, 12)}…`);
+
+    // Sentinel: open the sentinel case + commit signal commitments for all
+    // three orgs + pre-submit the first two signal proofs (QA + cold-chain).
+    // The third (exposure-cluster) is the live Sentinel demo action.
+    const sentinelTx = await openSentinelCaseOnChain(session, address);
+    console.log(`  opened sentinel case tx=${sentinelTx.slice(0, 10)}`);
+    const SIGNAL_CATEGORIES: Record<string, number> = {
+      "org-northstar": 1, // PROCESSOR_QA (high-confidence)
+      "org-meridian": 2, // COLD_CHAIN
+      "org-quickserve": 3, // EXPOSURE_CLUSTER
+    };
+    for (const [orgId, cat] of Object.entries(SIGNAL_CATEGORIES)) {
+      const org = organizations.find((o) => o.orgId === orgId)!;
+      const tx = await commitSignalForOrg(session, address, org, cat);
+      console.log(`  committed ${org.name} signal(cat ${cat}) tx=${tx.slice(0, 10)}`);
+    }
+    for (const orgId of ["org-northstar", "org-meridian"]) {
+      const org = organizations.find((o) => o.orgId === orgId)!;
+      const { txId } = await submitSignalForOrg(
+        session, address, org, SIGNAL_CATEGORIES[orgId],
+      );
+      console.log(`  ⚡ pre-submitted signal ${org.name} tx=${txId.slice(0, 10)}`);
+    }
 
     const preSubmittedOrgIds: string[] = [];
     for (let i = 0; i < nPre && i < proveable.length; i++) {
