@@ -26,10 +26,12 @@ RecallLens is a privacy-preserving coordination layer for outbreak traceback:
    case and share the same secret lineage — revealing only an anonymous lineage
    tag and a one-time nullifier.
 4. Flips a public **convergence** flag when three *independent* credentialed
-   organizations prove the same lineage — "common lineage verified" — so
-   investigators can target the recall precisely.
-5. Lets a consumer privately check their own receipt against the verified
-   lineage.
+   organizations prove the same lineage — "shared supply lineage verified" — so
+   investigators can target the recall precisely (the UI is explicit this does
+   not establish contamination or causation).
+5. Lets a consumer scan a product against official FDA recalls,
+   Midnight-anchored precautionary holds, and authorized RecallLens recalls —
+   with a full evidence receipt.
 
 ## How we built it
 - **Midnight / Compact** — one contract (`recalllens.compact`, compiler 0.31.1)
@@ -58,13 +60,15 @@ everything it's meant to protect.
 ## The signature moment: scan a real package
 On the Command Center, a **3D Outbreak & Evidence Globe** frames the US, marks
 the five affected states (state granularity only — no fabricated coordinates),
-and shows coarse, anonymous proof arcs. A consumer **scans a physical lettuce
-bag** (printable GS1 Digital Link label) with their camera — barcode + OCR run
-entirely on-device, raw image never uploaded. They confirm the GTIN/lot; the
-fields collapse into a sealed proof card; confirming runs the **genuine third
-Compact proof**, and the globe converges to "COMMON ORIGIN VERIFIED" from the
-real on-chain state. An arbitrary retail bag honestly returns "no verified
-intersection found — not proof the product is safe."
+and shows coarse, anonymous proof arcs. The physical demo uses a safe lettuce
+bag carrying a **signed RecallLens Product Passport**: a consumer scan checks
+it against the Midnight-anchored precautionary hold (barcode + OCR entirely
+on-device, raw image never uploaded); then — in the Partner Vault, as Meridian
+— the same physical label locates the partner's own committed record, and the
+partner's approval runs the **genuine third Compact proof**, converging the
+investigator's view to "SHARED SUPPLY LINEAGE VERIFIED" from real on-chain
+state. An arbitrary retail bag honestly returns "no verified match found — not
+a guarantee the product is safe."
 
 ## What we're honest about
 - A ZK proof shows authenticated records satisfy the case predicates — it does
@@ -73,8 +77,9 @@ intersection found — not proof the product is safe."
 - All partner/consumer data is **synthetic** and labeled; the real data is the
   public CDC outbreak. Accurate claim: **zero raw partner records on the public
   ledger**.
-- Admission trusts a registrar (a credentialing authority); selective disclosure
-  records an authorization hash but does not encrypt delivery. Both documented.
+- Admission trusts a registrar (a credentialing authority). Selective
+  disclosure now genuinely encrypts approved fields in-browser (ECDH+AES-GCM);
+  the demo's hold-membership resolver is a documented production limitation.
 
 ## Verified results (this build)
 - Contract compiles with full ZK keygen; **contract simulator tests pass**
