@@ -1,85 +1,84 @@
-# RecallLens — Two-Minute Demo Script
+# RecallLens — Demo Script
 
 **Tagline:** "Find the source, not the secrets."
 
-## Pre-flight (once, before presenting)
+**Presenter disclosure (say this up front):**
+"The government source data is real. The physical scans, Compact proofs,
+Midnight transactions and encrypted workflow are genuine. The participating
+companies and private supply records are synthetic because real companies do
+not publish their supply graphs — that is precisely the problem RecallLens
+solves."
+
+## Pre-flight
 
 ```bash
-npm run health            # devnet node/indexer/proof-server + API all green
-npm run demo:reset        # clear any prior deployment/wallet state
-npm run demo:seed         # deploy (registrar-gated), register 3 orgs, open case,
-                          # pre-submit 2 of 3 proofs (leaves the 3rd live)
-npm run demo:api          # API in live-devnet mode on :8787
-npm run dev:web           # web app on http://127.0.0.1:5173
+npm run health          # devnet + API green
+npm run demo:reset && npm run demo:seed   # fresh state:
+                        #   Sentinel 2/3 signals · trace 2/3 proofs (~4 min)
+npm run demo:api        # live-devnet API
+npm run dev:web         # http://127.0.0.1:5173
 ```
 
-Print a demo label from `/labels` (affected lot) and tape it to a bag of
-lettuce. Open the app on the **Command Center**. Optionally have a phone ready
-on **Consumer Check → Scan a product**.
+Print the demo kit from `/labels`: affected passport (tape to a safe lettuce
+bag), control passport, partner shipment label, FDA blueberries test card.
 
----
+## DEMO A — Official consumer recall (~40s, real government data)
 
-**[0:00 — The stakes]**
-"This is a real, active outbreak. CDC has linked 1,644+ Cyclospora cases across
-five states to shredded iceberg lettuce served at Taco Bell. This data is pulled
-from the CDC's official page." *(point to the LIVE/CACHED badge + retrieved
-timestamp; the globe shows the five affected states highlighted over the US.)*
+1. Consumer Check → Enter values manually (or scan the FDA test card).
+2. GTIN `00000000060401` · lot `60401` · best-by `2028-02-09` · product
+   "GreenWise Organic IQF Frozen Blueberries".
+3. → **EXACT OFFICIAL RECALL MATCH** with the FDA source link, live/cached
+   status, update + retrieval timestamps, matched fields.
+4. Point out: no Midnight claim here — this is pure official-source
+   verification, and the receipt says exactly that.
 
-**[0:20 — The traceback privacy problem]**
-"The slowest step is traceback — finding the common lot across farms,
-processors, and distributors. Today that means companies handing investigators
-their supplier lists, invoices, and routes. They stall — and regulators
-over-recall, destroying safe food."
+## DEMO B — RecallLens end-to-end (~90s guided + one longer proof)
 
-**[0:40 — Two partners already proved privately]**
-*(the globe shows 2/3 — two green proof arcs.)* "Two independent companies have
-already proven, privately, that they touched the same lineage. The public ledger
-recorded only anonymous tags and one-time nullifiers — no company data."
+**Detect (Sentinel).** Open Sentinel: 2 signals privately verified (Day −9 QA,
+Day −7 cold-chain), third awaiting its owner. Click "Review as owner" →
+"Acting as QuickServe" → **Approve final signal proof** → genuine
+`submitSafetySignal` settles (~60s) → **EARLY RISK CONVERGENCE DETECTED**
+("not yet a confirmed outbreak").
 
-**[1:00 — Scan the physical package (the live third proof)]**
-*(hold up the lettuce bag; on Consumer Check, Scan a product → camera at the QR)*
-"A consumer scans the actual package. The barcode and any OCR happen locally —
-the raw image never leaves the device. They confirm the GTIN, lot, and best-by."
-*(the fields collapse into a sealed proof card)* "The GTIN and lot are just
-lookup keys into the private vault. Confirming runs the **genuine third
-Compact proof** on Midnight — a real zero-knowledge proof, a real settled
-transaction."
+**Contain.** Issue confidential precautionary hold → genuine
+`issuePrecautionaryHold` anchors the hold commitment.
 
-**[1:20 — Convergence]**
-*(result: "Affected purchase detected — synthetic positive"; back on the
-Command Center the globe's third arc lands and shows "COMMON ORIGIN VERIFIED")*
-"Three independent credentialed organizations converged on the same lineage —
-and **we found the common source without publishing a single company's supply
-graph on-chain**. Zero raw partner records on the public ledger."
+**Warn early.** Scan the lettuce passport as a consumer →
+**PROOF-VERIFIED PRECAUTIONARY HOLD** — "not yet an official government
+recall" — with the anchor tx in the evidence receipt.
 
-**[1:35 — Narrowed recall + honest result]**
-*(Investigation → recall blast radius)* "That precision takes the recall from
-2,710 cases across 75 stores down to 526 cases across the 14 stores that
-actually touched this lineage — 80% of product spared (simulated from demo
-records)." *(back to the consumer result)* "And the result is honest: the
-private partner records are synthetic, but the Compact proof is genuine. It even
-says this is not proof the product is safe, and not a diagnosis — follow CDC/FDA."
+**Trace.** Investigation → Send private-match request (note: the investigator
+has no proof button — it *cannot* run Meridian's proof). Switch to Vault →
+Meridian → the exact predicate is shown → scan the partner shipment label
+(GTIN `00810099110042`, lot `NFP-SHRED-26164-07`) → committed record located →
+**Approve and generate private proof** → genuine `proveRelevantEvent` (~60s) →
+back on Investigation: **SHARED SUPPLY LINEAGE VERIFIED** — "narrows the
+investigation but does not independently establish contamination or
+causation."
 
-**[1:55 — Close]**
-"Epidemiology and lab testing still decide causation; RecallLens is the
-privacy-preserving coordination layer. It takes outbreak response from the first
-signal to the final consumer warning — **finding the source, not the secrets**."
+**Disclose minimally.** In Meridian's vault: approve sourceGln + lotCode +
+eventDate, reject destinationGln → "Encrypt approved fields" (in-browser
+ECDH+AES-GCM; only ciphertext transits) → Investigation: decrypt →
+**PROBABLE SOURCE NARROWED**.
 
----
+**Act.** Issue targeted confidential hold → authorize → **AUTHORIZED
+RECALLLENS DEMONSTRATION RECALL** (never called an FDA recall). The
+blast-radius panel stays labeled "Simulated impact using demonstration supply
+records."
 
-## Honest, reliable demo notes
+**Protect + prove removal.** Re-scan the lettuce → **AFFECTED PRODUCT
+CONFIRMED** with official general safety guidance and the genuine tx evidence
+in the receipt. Partners confirm quarantine/removal in their vaults.
 
-- The affected label runs a **genuine** on-chain proof (real proof server, node,
-  indexer). The first two proofs are pre-submitted (documented above); the third
-  is live. Nothing fakes success — a failure surfaces honestly with proof stages.
-- If the live network hiccups, restart the API with `RECALLLENS_USE_LIVE=0`
-  (deterministic fallback, clearly badged "deterministic fallback", no txId) —
-  and say so; never call the fallback a live proof.
-- Reproduce the genuine proof any time: `npm run e2e:onchain` prints tx ids +
-  decoded public state.
-- The **control** label returns "No verified intersection found" — use it to
-  show the truthful negative path. A random retail bag returns the same honest
-  "no verified intersection in the information currently available" + safety
-  caveat.
-- Reset & repeat: `npm run demo:reset && npm run demo:seed` gives a fresh 2/3
-  state for the next run.
+Optional: scan the control passport → **NO VERIFIED MATCH FOUND** ("not a
+guarantee that the product is safe").
+
+## Reliability
+
+- Cached FDA/CDC snapshots take over automatically if live fetches fail
+  (badged CACHED).
+- `RECALLLENS_USE_LIVE=0` runs the clearly-badged deterministic fallback — say
+  so if used; never call it a live proof.
+- A failed genuine proof surfaces its error and allows retry; success is never
+  simulated.
+- Reset between runs: `npm run demo:reset && npm run demo:seed`.

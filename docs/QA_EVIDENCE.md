@@ -87,3 +87,22 @@ path on a device before presenting:
 - `POST /api/case/:caseId/reset` clears fallback state (no-op on live backend,
   which is re-seeded via `npm run demo:seed`). E2E uses it in `beforeEach` for
   isolation; the demo uses `npm run demo:reset` + re-seed.
+
+## Product rework verification (2026-07-18, this session)
+
+All on the live devnet (contract per `.recalllens-deployment.json`):
+
+| Check | Evidence |
+|---|---|
+| 43/43 contract tests (incl. 27 Sentinel) | `npm run test:contract` |
+| Genuine third signal by OWNING role | submitSafetySignal tx `0017c16c4d…` → threshold 3/3/3 + QA |
+| Hold anchored | issuePrecautionaryHold tx `00492081d6…` |
+| Consumer scan → hold | PROOF_VERIFIED_PRECAUTIONARY_HOLD, passport sig valid, hold tx in receipt |
+| Role-correct trace | request → Meridian scan (own-lot enforced) → approve → proveRelevantEvent tx `00b87a8d93…` → 3/3 |
+| Recall authorized | authorizeRecallPredicate tx `00cbad4776…` → consumer AUTHORIZED_RECALL_MATCH, "not an FDA recall" |
+| Encrypted disclosure | ciphertext-only transit; approved fields decrypt; rejected field absent from plaintext AND ciphertext |
+| Role guards | /api/case/prove 404 · approve-without-scan 403 · wrong-org signal approval 403 |
+| FDA card | EXACT_OFFICIAL_RECALL_MATCH, live:true, brand+lot+best-by+size matched |
+| Negative paths | NO_VERIFIED_MATCH + safety caveat · POSSIBLE_ADVISORY_MATCH · INSUFFICIENT_DATA · PASSPORT SIGNATURE INVALID |
+| E2E | 20/20 Playwright (desktop+mobile) incl. role guards, sentinel flow, FDA card, consumer-cannot-prove |
+| Console | 0 errors on Command + Sentinel pages |

@@ -57,9 +57,11 @@ reproducibility, so we do not claim they were never published anywhere.)
    revealing which event, which organization, or any field. The proof publishes
    only an **anonymous lineage tag** and a **one-time nullifier**.
 5. When **three independent credentialed organizations** prove the same lineage
-   tag, the public **convergence** flag flips. The investigator sees "common
-   lineage verified" — and can now target the recall to just that lineage
-   instead of the whole product line.
+   tag, the public **convergence** flag flips. The investigator sees "shared
+   supply lineage verified" — and can now target the recall to just that
+   lineage instead of the whole product line. (The UI is explicit that this
+   narrows the investigation; it does not establish contamination or
+   causation.)
 
 Under the hood: a single [Compact](https://docs.midnight.network) contract holds
 a Merkle tree of org credential commitments, a Merkle tree of event commitments,
@@ -81,14 +83,21 @@ real transactions; public state is read back through the Midnight indexer.
 - **Partner Vault** — a role switcher for the four fictional orgs, each with its
   local EPCIS event table, showing exactly what stays private and what becomes
   public on a match.
+- **Sentinel** — the Early Signal Radar: a clearly-labeled synthetic
+  pre-outbreak replay where independent organizations privately prove safety
+  signals (QA test, cold-chain excursion, exposure cluster) against the same
+  hidden lineage; a transparent threshold opens a confidential case and a
+  Midnight-anchored precautionary hold.
 - **Consumer Check** — **scan a physical product label** (GS1 QR via camera or
   photo upload; native BarcodeDetector → ZXing fallback → local OCR → manual
-  correction — all on-device, raw image never uploaded) or pick a deterministic
-  synthetic receipt. The affected label runs the genuine third Compact proof and
-  returns a truthful result with a safety disclaimer; an unknown retail product
-  returns an honest "no verified intersection found".
-- **Demo Labels** (`/labels`) — printable GS1 Digital Link labels (affected +
-  control) to attach to a real lettuce bag for the physical scan demo.
+  correction — all on-device, raw image never uploaded). A Recall Intelligence
+  engine checks, in order: official FDA advisories (live-or-cached with
+  provenance), authorized RecallLens recalls, and proof-verified precautionary
+  holds — returning one of six explicit evidence levels with a full evidence
+  receipt. Consumers can never trigger a supply-chain partner's proof.
+- **Demo kit** (`/labels`) — printable **signed Product Passports** (affected,
+  control, partner shipment) plus the **FDA official-recall test card** (real
+  public identifiers for the GreenWise frozen-blueberries recall).
 
 ### The globe is honest about geography
 It plots official data at **state granularity only** (state centroids, never a
@@ -113,18 +122,22 @@ npm run test:contract
 # 3. Start the local Midnight devnet (if not already up)
 npm run devnet:up
 
-# 4. Deploy + seed the demo (registers 3 orgs, opens the case,
-#    pre-submits 2 of 3 proofs so the 3rd is the live demo moment)
-npm run demo:seed        # = deploy-and-seed --presubmit 2
+# 4. Deploy + seed the demo: registers 4 orgs, opens the outbreak AND
+#    Sentinel cases, commits events + signals, pre-submits 2 of 3 Sentinel
+#    signal proofs and 2 of 3 trace proofs (the third of each is the live
+#    demo moment, owned by its role)
+npm run demo:seed
 
 # 5. Run the app (API + web)
 npm run demo:api         # live-devnet backend on :8787
 npm run dev:web          # web app on http://127.0.0.1:5173
 ```
 
-Open http://127.0.0.1:5173. The dashboard works read-only with no wallet. On the
-Investigation page, click **"Run private match — Meridian Cold Chain"** to
-generate the third genuine proof live and watch convergence flip to 3/3.
+Open http://127.0.0.1:5173. The dashboard works read-only with no wallet.
+Follow docs/DEMO_SCRIPT.md: approve the third Sentinel signal as its owning
+role, issue the precautionary hold, then — acting as Meridian in the Partner
+Vault — scan the shipment label and approve the third genuine trace proof.
+The investigator can only REQUEST proofs; each partner generates its own.
 
 ### Verify the genuine on-chain proof independently
 

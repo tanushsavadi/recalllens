@@ -47,6 +47,33 @@ HTTP 200 but **zero results** (`pagination.total = 0`). The outbreak page is
 not syndicated through the media library. Tested 2026-07-18T07:17Z. We do not
 rely on it.
 
+### FDA outbreak advisory pages (added in the product rework)
+
+| Source | URL | Retrieved | Status | sha256 |
+|---|---|---|---|---|
+| Iceberg lettuce investigation | https://www.fda.gov/food/outbreaks-foodborne-illness/investigation-5-state-outbreak-cyclospora-illnesses-iceberg-lettuce-july-2026 | 2026-07-18T18:31:11Z | **LIVE direct fetch** (no bot block, unlike www.cdc.gov) | `c7658be7168bd338faa66f6dc85adbcf94b4b1677a0fd5934b785df0c673bbe5` |
+| Frozen blueberries investigation | https://www.fda.gov/food/outbreaks-foodborne-illness/outbreak-investigation-e-coli-frozen-blueberries-july-2026 | 2026-07-18T18:31:11Z | **LIVE direct fetch** | `8862b77bd1aefcc31f513e24ab173ce1b9b49f59b661259a35053825e3ebcd8c` |
+
+Raw fixtures: `packages/source-adapters/fixtures/fda-{lettuce,blueberries}-07-26.raw.html`.
+Parser: `fda-parser.ts` (`fda-advisory-parser@1.0.0`) — explicit `<h2>Product:/Status:/Stores affected:` + Case Counts + `node-current-date` mappings verified against the real markup.
+
+Blueberries recall identifiers on the official page (used by the FDA test
+card): GreenWise-brand organic blueberries, 10-oz, lot **60401**, best-by
+**February 9, 2028**, recalling firm Frutas y Hortalizas del Sur S.A. (Chile),
+Publix stores in AL/FL/GA/KY/NC/SC/TN/VA, status Ongoing, 12 illnesses / 4
+hospitalizations / 0 deaths, updated 2026-07-06. **UPC/GTIN is NOT printed on
+the advisory** — recorded as a missing field, never invented.
+
+### USDA FoodData Central (product identity enrichment)
+
+Correct host: `https://api.nal.usda.gov/fdc/v1/foods/search` (the
+`api.fdc.nal.usda.gov` host in some docs does not resolve). Requires a data.gov
+key (`USDA_API_KEY`); DEMO_KEY works but is throttled to ~10 req/hour. On any
+failure the adapter uses the checked-in labeled sample
+(`usda-greenwise-sample.json`, trimmed to Branded results with `gtinUpc`,
+retrieved 2026-07-18) and never fakes a live request. The recalled blueberries
+are not catalogued in FDC (verified 2026-07-18).
+
 ### openFDA food enforcement — historical/supporting only
 
 | Field | Value |
@@ -54,7 +81,7 @@ rely on it.
 | Endpoint | `https://api.fda.gov/food/enforcement.json?search=...&limit=N` |
 | Tested | 2026-07-18T07:17Z, HTTP 200, `meta.results.total = 219` for `product_description:lettuce` |
 | Sample fixture | `packages/source-adapters/fixtures/openfda-lettuce-sample.json` |
-| Role | Historical produce-recall context ONLY. NOT the current-alert source. No 2026 Taco Bell record appears in this endpoint yet. |
+| Role | **Weekly-updated enforcement data** — historical/supporting context ONLY, never the current-alert source. Verified 2026-07-18: NO enforcement record exists yet for either 2026 outbreak (the GreenWise blueberries record is absent — `code_info:60401` and `recalling_firm:"Frutas y Hortalizas"` both 404). Enforcement records lag advisories by weeks; the app states this rather than faking structured recall data. |
 
 ## Synthetic private data (SYNTHETIC — clearly labeled)
 

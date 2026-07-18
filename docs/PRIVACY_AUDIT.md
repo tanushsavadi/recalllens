@@ -65,6 +65,32 @@ identities and receipts (EPCIS fields in `packages/schemas/src/epcis.ts`).
 disclosed Merkle roots are leaf-independent — they identify the tree state, not
 the matching leaf.
 
+### Sentinel circuits (product rework)
+
+| Circuit | Disclosed value | Classification |
+|---|---|---|
+| `openSentinelCase` | `caseId`, `SentinelCaseInfo` fields, window-order bool | public case definition |
+| `submitSafetySignal` | `caseId`; `category` (1–3 — intentionally public so the diversity/QA policy is auditable); two leaf-independent Merkle roots; `sentinelTag = H("rl:stag:v1", caseId, lineageToken)`; `signalNullifier = H("rl:snull:v1", caseId, orgSecret)`; success-only booleans | tag/nullifier are hashes of high-entropy secrets |
+| `issuePrecautionaryHold` | `caseId`, `sentinelTag`, `holdCommitment` | opaque set commitment |
+| `authorizeRecallPredicate` | `caseId`, `predicateHash` | opaque hash |
+
+Never disclosed by Sentinel: which org signaled, the raw test/temperature/
+exposure values, exact signal times, locations, or the lineage token. The
+signal nullifier is per-(case, org) — one signal per org per case — so
+duplicate/inflation attempts are publicly rejected while orgs stay unlinkable
+across cases.
+
+### Passport & disclosure crypto (off-chain)
+
+- Product Passport QR: GTIN, lot, expiry, random 128-bit passportId, issuer id,
+  ECDSA P-256 signature. NO lineage token, secrets, or keys (unit-tested).
+- Hold membership commitment: `sha256("rl-passport-commit:v1"|gtin|lot|
+  passportId)` — not brute-forceable from a guessable lot alone.
+- Selective disclosure: partner-approved fields only, encrypted in-browser
+  (ephemeral ECDH P-256 → HKDF → AES-256-GCM); ciphertext-only transit;
+  rejected fields never enter the plaintext (unit + API-tested). Demo keys are
+  checked-in synthetic credentials (disclosed); production uses managed keys.
+
 Note: `disclose()` in Compact makes a value part of the public transcript. It
 does NOT encrypt. Every disclosed value above was chosen deliberately.
 
