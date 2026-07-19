@@ -306,8 +306,8 @@ app.post("/api/consumer/check", async (c) => {
 
 /* ── CONSUMER RECALL INTELLIGENCE ───────────────────────────────────────
  * The consumer verify is a READ-ONLY downstream operation. It NEVER runs a
- * supply-chain partner's proof (the old behavior was removed — see
- * docs/PRODUCT_REWORK_AUDIT.md C1). Precedence: official FDA identifiers →
+ * supply-chain partner's proof (the old behavior was removed during the
+ * role-separation rework). Precedence: official FDA identifiers →
  * authorized RecallLens recall → proof-verified hold → no match. */
 
 app.post("/api/consumer/verify", async (c) => {

@@ -3,7 +3,7 @@
 This document is the authoritative account of what RecallLens makes public, what
 stays private, every `disclose()` in the Compact contract, and what the
 zero-knowledge proof does and does not establish. It was cross-checked by an
-independent fresh-context verifier (see docs/BUILD_STATE.md).
+independent fresh-context verifier (see docs/EVIDENCE.md).
 
 Contract: `packages/contract/src/recalllens.compact`.
 
