@@ -60,6 +60,44 @@ is real public identifiers). In production, passports would be issued by real
 processors and holds anchored by real investigations; the consumer flow is
 unchanged.
 
+**What is the difference between an official recall and a RecallLens action?**
+An EXACT OFFICIAL RECALL MATCH comes purely from the FDA advisory (real public
+identifiers; "Midnight involved: no"). A RecallLens authorized recall is a
+NETWORK action an investigator explicitly authorized after trace convergence
+and partner disclosure — the UI always says "not an FDA recall," and a
+matching passport shows "MATCHES AUTHORIZED RECALL SCOPE… does not
+independently prove that the individual product is contaminated."
+
+**Why does the FDA test card have no GTIN?**
+Because the FDA advisory does not publish one. RecallLens never fabricates a
+missing identifier: the card's QR encodes only lot (AI 10) + best-by (AI 17),
+the card face prints "GTIN/UPC: not published by the FDA advisory," and the
+evidence receipt lists it under fields missing. Matching uses the documented
+combination of identifiers the advisory actually publishes (lot + a
+corroborating identifier).
+
+**Why doesn't "no match" mean my product is safe?**
+"No verified match" only means none of the checked sources (FDA advisory,
+active RecallLens holds, authorized recall scopes) matched the scanned
+identifiers at that moment. A product could be affected by a recall RecallLens
+does not track, a not-yet-published advisory, or contamination with no recall
+at all. The result uses neutral styling — never a green success state — and
+says exactly this.
+
+**Are the demo passports synthetic even when they don't match anything?**
+Yes. Every RecallLens passport in this demo is a signed synthetic
+demonstration credential, and its receipt says so ("Scanned input: signed
+RecallLens demonstration passport (synthetic)") regardless of the result. A
+no-match does not make the input less synthetic; the receipt separates input
+provenance from source provenance.
+
+**What does removal confirmation actually prove?**
+It is a PARTNER-REPORTED attestation recorded by the RecallLens service —
+off-chain, not a Midnight transaction, not cryptographically verified. The UI
+labels it "Partner-reported quarantine/removal" with that exact evidence
+basis. Producing a chain-anchored removal attestation is production roadmap,
+not a demo claim.
+
 **What prevents fake or duplicate signals?**
 Registration is registrar-gated (credentialing authority); every signal must
 open a precommitted, authenticated record inside the circuit; per-(case, org)

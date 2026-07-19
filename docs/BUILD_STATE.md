@@ -1,10 +1,153 @@
 # RecallLens — Build State
 
-**Current milestone:** PRODUCT REWORK COMPLETE — role-separated workflow,
-Sentinel early-warning (genuine Compact circuits), consumer Recall
-Intelligence on real FDA data, signed passports, encrypted disclosure.
-**Last updated:** 2026-07-18 (coherence rework; checkpoint tag
-`checkpoint-pre-rework` = a029580)
+**Current milestone:** FINAL INTEGRITY PASS — implementation + verification
+COMPLETE; demo re-seeded to judge-ready state.
+**Last updated:** 2026-07-18
+
+## Final integrity pass — changes implemented (all verified this session)
+
+- **Scan isolation** (ScanProduct.tsx rewrite): per-attempt sequence counter;
+  beginAttempt() wholesale-replaces ALL scan state (fields/rawText/product
+  name/method/errors); camera/upload/manual/Restart all start clean; stale
+  async decodes dropped by seq; ConsumerCheck drops results from older
+  attempts. E2E regressions added (FDA→lettuce, A→B without restart, invalid
+  upload, receipt cleared).
+- **Receipt model** (schemas rework.ts + recall-intelligence.ts rewrite):
+  inputProvenance/inputSynthetic, sourcesChecked[] (per-system results), basis,
+  midnight{involved,mode,networkLabel,contract,tx,note},
+  dataLeftDevice{exact fields, imageTransmitted:false}. networkLabelFor maps
+  "undeployed"→"Local Midnight devnet" (raw id never shown). Control passport
+  now inputSynthetic:true; no-match lists all four systems with results;
+  Midnight involvement true only when hold/recall state actually consulted.
+  New VERIFICATION_UNAVAILABLE level. ConsumerVerifyRequest gtin now optional
+  (never fabricated); scanOrigin added.
+- **FDA GTIN** removed from card + QR (now `(10)60401(17)280209`), card prints
+  "GTIN/UPC: not published by the FDA advisory"; gs1 parser accepts lot-only
+  labels (identifier required, GTIN optional).
+- **Seed txids**: deploy-and-seed records preSubmittedProofTxIds/
+  preSubmittedSignalTxIds; live-backend + workflow consume them; fallback and
+  legacy records display "previously verified during demo setup" — the
+  "(pre-submitted)" placeholder is gone from source.
+- **Lifecycle**: GET /api/workflow/:caseId/stage (authoritative snapshot);
+  WidgetDrawer pill always subsystem-labeled with full per-subsystem drawer.
+- **Role/idempotency**: authorizeRecall server-gated on converged +
+  disclosure; separate "Review recall predicate…"→confirm UI; disclosure send
+  idempotent (server) + sent-state server-driven (reload-proof); removal
+  idempotent with evidenceBasis.
+- **Removal truth**: Option B — "Partner-reported quarantine/removal",
+  REMOVAL_EVIDENCE_BASIS ("off-chain — not a Midnight transaction, not
+  cryptographically verified") returned by API and shown verbatim.
+- **Language**: MATCHES AUTHORIZED RECALL SCOPE (+"does not independently
+  prove"); RELEVANT SHIPMENT IDENTIFIED; hold copy adds "does not prove the
+  product is contaminated".
+- **No-match design**: neutral info-blue, per-source list, official link kept.
+- **Demo kit**: neutral Passport A/B/Partner Shipment titles; outcome-free
+  faces; presenter mapping moved to DEMO_SCRIPT; print CSS (@media print:
+  white, black borders, QR quiet zone, no globe/nav/buttons, 86mm cards);
+  print render inspected; QR decode verified from full/cropped/rotated/450px
+  card images in-browser (300px honestly fails → OCR/manual fallback).
+- **Visual/responsive**: emoji controls → stroke icons; honest staged
+  ProofProgress (named stages + elapsed, indeterminate); technical details
+  collapsed in receipt; mobile pill repositioned below nav; badge single-line;
+  footer contrast raised; content top padding on mobile.
+- **Command Center**: two separate labeled stat rails (official CDC snapshot
+  vs private coordination); persistent globe legend ("Schematic anonymous
+  proof activity — Not facilities or shipment routes") + arc hover labels;
+  RecallImpact renamed to "shipping cases" everywhere.
+- **CDC states regression fixed**: live page revision names no states in
+  prose; adapter reuses cached official state names only when live title
+  count matches (5/5) — live fetch now returns all 5 states.
+- **Nav overlap**: confirmed a Playwright fullPage screenshot artifact (header
+  is position:fixed, top stays 16px at scrollY 321); new evidence uses
+  viewport captures.
+
+**Verification:** contract 43/43 · gs1 22/22 · source-adapters 27/27 · schemas
+4/4 · fixtures 8/8 · client 8/8 · Playwright 28 passed + 2 intentional
+desktop-only skips · tsc clean everywhere · prod build OK. Full live-devnet
+lifecycle (Flows A–H) executed in the rendered browser against contract
+`e501d777…`: signal→hold (tx 0024d7b54c…)→consumer hold→request→partner
+scan+approve (tx 0001d3…e56341, 3/3 indexer-read)→disclosure round-trip
+(rejected field absent; duplicate send rejected; reload-proof)→predicate
+review→recall (tx 00e0a3a075…)→scope match→Passport B neutral no-match→FDA
+exact match via QR (no GTIN)→removal attestation (idempotent). Cross-scan
+isolation flows (A→B upload, FDA→lettuce) re-verified live. Network transit
+inspected (identifiers only, no image); console 0 errors/0 warnings.
+Evidence: demo-evidence/after/final-integrity-pass/ (indexed README).
+
+**Fresh-context verifier (independent subagent, ran against this spec):**
+all 10 verification areas PASS with file:line evidence; overall verdict
+SATISFIED. (Noted nuance: the fabricated-GTIN string appears only inside
+`toHaveCount(0)` negative assertions in the e2e specs — the regression guard
+itself.)
+
+**Globe full-bleed fix (user-reported mid-pass):** the square canvas
+(min-dimension × 1.35) visibly clipped the zoomed earth at wide viewports
+(reproduced at 1920×937). GlobeStage now sizes the canvas to viewport × 1.12
+in both dimensions; verified at 1920×937 and 1440×900 (evidence 24/25).
+
+**Evidence re-collection (2026-07-19, user-requested):** all outdated
+evidence sets (baseline/, after/e2e/, after/final-integrity-pass/) deleted;
+the FULL workflow was re-captured with Playwright MCP viewport screenshots on
+contract `327994f53dd0…e75d86b3` into **`demo-evidence/workflow/`** (38 shots
++ indexed README): start state → drawer → neutral demo kit + print render →
+Sentinel 2/3 (genuine seed txids) → owner review → staged proof → 3/3
+convergence → hold tx `000f8748…` → Passport A upload-scan → hold receipt
+(+expanded technical details) → request-only investigator → Meridian
+shipment-card upload-scan → record located → staged proof → settled
+(tx `006ad21928…`, 3/3) → disclosure field selection → sent (idempotent,
+0 duplicate buttons) → 3/3 shared lineage → decrypt (RELEVANT SHIPMENT
+IDENTIFIED) → predicate review → recall tx `00f20708…` → MATCHES AUTHORIZED
+RECALL SCOPE → Passport B neutral no-match → FDA card decode (empty GTIN) →
+EXACT OFFICIAL MATCH → partner-reported removal → end-state pill/drawer →
+mobile 390 → light theme.
+
+**Judge-ready state (re-seeded after the evidence walkthrough):** contract
+`942452cd5f38bb72…e717d9ee` deployed 2026-07-19T01:18:20Z; verified via live
+API: stage sentinel-signals, Sentinel 2/3, trace 2/3, no
+hold/recall/disclosure/removal, mode live-devnet, CDC live; pre-submitted
+rows carry genuine seed txids (signals `00fa1aa30c…`/`00757f2e4d…`, proofs
+`0026ff0cfd…`/`007e2226a9…`). API :8787 healthy, web :5173 up.
+
+**Next executable action:** none — pass complete.
+
+## Final integrity pass — Phase 0 audit (2026-07-18, this session)
+
+Environment at audit time: web :5173 OK, API :8787 healthy (`cdc: live`,
+`chain: live-devnet`), deployed contract `e501d777f2ac…a3dc8027`
+(deployedAt 2026-07-18T21:18:55Z, undeployed network), seed state
+Sentinel 2/3 + trace 2/3 (`matchCount: 2, converged: false` from live API).
+Git: main @ 8ece122, evidence dir demo-evidence/after/e2e/ untracked.
+
+Each reported issue classified after live-viewport reproduction:
+
+| # | Issue | Classification | Evidence |
+|---|---|---|---|
+| P1 | Cross-scan product-name leak (FDA name survives Restart into lettuce scan) | **REPRODUCED live** | manual FDA entry → Restart → upload lettuce label → productName still "GreenWise Organic IQF Frozen Blueberries" (screenshot 00-defect-cross-scan-product-name-leak.png). Cause: `productName` state in ScanProduct.tsx never cleared by Restart/handleFile/beginManual; `fields`/`rawText` also survive Restart (Restart only sets stage="idle"). |
+| P2a | "Midnight involved: yes — undeployed, tx …" | **REPRODUCED in code** | ConsumerCheck.tsx:194 renders `receipt.network` = "undeployed" (the Midnight network id for a local devnet) directly into user copy. |
+| P2b | Control passport receipt says "Synthetic data: no" | **REPRODUCED live via API** | /api/consumer/verify with signed control passport → `syntheticData: false` while `passport.valid: true, issuer: rl-demo-issuer-1` (a synthetic demo passport). Cause: recall-intelligence.ts NO_VERIFIED_MATCH branch never sets syntheticData or reflects input provenance. |
+| P2c | No-match claims 3 systems checked, receipt shows only FDA + "Midnight involved: no" | **REPRODUCED live via API** | same response: whyThisLevel names advisory+recall+hold but `midnightInvolved:false`, single source row. Hold/recall registry WAS checked (workflow.holdMembership/recallMembership) but is not represented. |
+| P2d | Fabricated FDA GTIN `00000000060401` | **REPRODUCED in code+UI** | label-data.ts qrPayload zero-pads lot 60401 into a GTIN-shaped AI(01); FDA card scan produces "Scanned: 00000000060401" row. The FDA advisory publishes NO GTIN/UPC. |
+| P2e | `tx (pre-s…itted)` placeholder | **REPRODUCED in code+UI** | live-backend.ts:105 + workflow.ts initialSignals set literal `"(pre-submitted)"` which UI truncates as tx-like text. Seed script logs real txids but discards them (deploy-and-seed.ts). |
+| P3 | Unlabeled global pill "Proving 2/3" ambiguous across subsystems | **REPRODUCED live** | pill shows "Proving 2/3" (trace) even while Sentinel is also 2/3; after Sentinel→3/3 the pill still says "Proving 2/3" with no subsystem label. |
+| P4a | Hold + recall in one button | **REPRODUCED in code** | InvestigationWorkspace.tsx:210 button literally "Issue targeted confidential hold → authorize recall" though it only calls authorizeRecall (hold already exists — copy misrepresents the action; no predicate review, no confirmation dialog). |
+| P4b | Recall possible before disclosure | **REPRODUCED in code** | authorizeRecall gated only on holdIssued + converged (panel visibility), not on disclosure state. |
+| P4c | Disclosure send not idempotent across reload | **REPRODUCED in code** | PartnerVault DisclosurePanel `sent` is local useState; reload → button re-enabled although a package exists server-side. |
+| P4d | Removal idempotency | Partial: server-side `confirmRemoval` is idempotent (includes check); UI hides button after `mine`. Verified OK server-side; UI relies on poll. |
+| P5 | "Quarantine/removal confirmed" evidence basis | **AUDITED: service-side state mutation only.** confirmRemoval mutates in-memory/file JSON; no chain transition, no signature. Wording overclaims. |
+| P6 | "AFFECTED PRODUCT CONFIRMED" headline | **REPRODUCED in code** (recall-intelligence.ts:184). |
+| P6b | "PROBABLE SOURCE NARROWED" badge | **REPRODUCED in code** (InvestigationWorkspace.tsx:322). |
+| P7 | No-match uses green/verified styling | **REPRODUCED in code** (ConsumerCheck LEVEL_STYLE: NO_VERIFIED_MATCH → verified/green tone). |
+| P8 | Printed passports reveal expected outcome | **REPRODUCED in code+UI** (label-data.ts titles "Affected…"/"Control (unaffected)…" + subtitles printed on card front). No print CSS beyond `print:hidden`/break-inside. |
+| P9a | Nav overlap mid-page in screenshots 16/18/19/21/22/26 | **SCREENSHOT ARTIFACT, not live.** Live check: header is `position:fixed` and stays at top:16px at scrollY 321 (probed via DOM). Playwright fullPage screenshots paint fixed elements at the scroll offset → artifact. Fix evidence-capture method; keep viewport screenshots. |
+| P9b | Emoji controls (📷🖼⌨🔒🔐🔓) | **REPRODUCED** in ScanProduct/PartnerVault/InvestigationWorkspace. |
+| P9c | Raw enums/hashes/ISO timestamps in primary consumer result | **REPRODUCED** (EvidenceReceiptCard always expanded). |
+| P9d | Mobile issues (3-line badge, unstyled scan buttons, giant pill) | **REPRODUCED** in earlier mobile screenshots 30/31. |
+| P10 | Illness metrics + proof metric fused in one stat rail; "cases" for inventory | **REPRODUCED** (CommandCenter RailStat row mixes CDC counts with 3/3 Verified; RecallImpact labels "Broad recall (cases)" where fixture field is casesReceived = shipping cases). |
+| P-globe | Arcs resemble shipment routes | **REPRODUCED** (BackgroundGlobe ARC_ORIGINS→focus arcs; legend text exists only on Command page top-left, small). |
+
+Non-issues confirmed: role guards (investigator/consumer cannot prove — no
+such endpoint/button), encrypted disclosure rejected-field exclusion (unit +
+API tested), genuine on-chain paths, deterministic seed.
 
 ## Rework evidence (all verified this session against live tools)
 

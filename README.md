@@ -95,9 +95,13 @@ real transactions; public state is read back through the Midnight indexer.
   provenance), authorized RecallLens recalls, and proof-verified precautionary
   holds — returning one of six explicit evidence levels with a full evidence
   receipt. Consumers can never trigger a supply-chain partner's proof.
-- **Demo kit** (`/labels`) — printable **signed Product Passports** (affected,
-  control, partner shipment) plus the **FDA official-recall test card** (real
-  public identifiers for the GreenWise frozen-blueberries recall).
+- **Demo kit** (`/labels`) — printable **signed Product Passports** (neutral
+  Passport A, Passport B, and a Partner Shipment Passport — the printed cards
+  never state an expected outcome; the live network state decides) plus the
+  **FDA official-recall test card** (real public identifiers for the GreenWise
+  frozen-blueberries recall; the advisory publishes **no GTIN/UPC**, and the
+  card/QR therefore carries only lot + best-by — a missing identifier is never
+  fabricated). Print CSS renders high-contrast white cards.
 
 ### The globe is honest about geography
 It plots official data at **state granularity only** (state centroids, never a
@@ -136,8 +140,12 @@ npm run dev:web          # web app on http://127.0.0.1:5173
 Open http://127.0.0.1:5173. The dashboard works read-only with no wallet.
 Follow docs/DEMO_SCRIPT.md: approve the third Sentinel signal as its owning
 role, issue the precautionary hold, then — acting as Meridian in the Partner
-Vault — scan the shipment label and approve the third genuine trace proof.
-The investigator can only REQUEST proofs; each partner generates its own.
+Vault — scan the Partner Shipment Passport and approve the third genuine trace
+proof. The investigator can only REQUEST proofs; each partner generates its
+own. Recall authorization is a separate, predicate-reviewed action that the
+server refuses before trace convergence and partner disclosure; disclosure
+sends and removal reports are idempotent. Removal is a partner-reported
+off-chain attestation and is labeled as such.
 
 ### Verify the genuine on-chain proof independently
 
@@ -187,9 +195,13 @@ npm run demo:reset       # remove local deployment record + wallet state
 - Admission is gated by a single registrar credential (the trust anchor). A
   malicious registrar could admit colluding orgs — the same trust any
   credentialing authority carries. See THREAT_MODEL.md.
-- Selective disclosure records an authorization hash; it does **not** encrypt or
-  deliver plaintext to one recipient (Compact `disclose()` does not encrypt).
-  The UI states this limitation.
+- Selective disclosure genuinely encrypts approved fields in-browser
+  (ephemeral ECDH P-256 → HKDF → AES-256-GCM; ciphertext-only transit;
+  rejected fields never enter the plaintext). The demo's recipient keys are
+  checked-in synthetic credentials — production needs managed key exchange.
+- Removal confirmation is a **partner-reported off-chain attestation**
+  recorded by the RecallLens service — not a Midnight transaction and not
+  cryptographically verified; the UI labels it exactly that way.
 - Demo fixture secrets are public constants for reproducibility — never reuse in
   production.
 - The recall blast-radius comparison is **simulated** from fixture data and is

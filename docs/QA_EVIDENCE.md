@@ -1,5 +1,38 @@
 # RecallLens — QA Evidence
 
+## Final integrity pass (2026-07-18, latest — supersedes sections below where they conflict)
+
+Deployment under test during the integrity pass: contract
+`e501d777f2ac…a3dc8027`; the full workflow was then re-captured end-to-end on
+contract `327994f53dd0…e75d86b3`. **Current evidence set:**
+`demo-evidence/workflow/` (indexed README inside) — all older evidence
+directories were deleted; screenshot references in the historical sections
+below refer to sets that no longer exist and are kept only as a record of
+what was verified at the time.
+
+| Check | Result | Evidence |
+|---|---|---|
+| Cross-scan isolation (product-name leak fixed) | PASS | ScanProduct per-attempt seq state; e2e "cross-scan isolation" tests; screenshot 00 (defect) vs live retest |
+| Receipt model (provenance/sources/basis/Midnight separated) | PASS | source-adapters 27/27 incl. new per-source tests; live API responses (control passport now `inputSynthetic: true`, per-source results listed) |
+| "undeployed" never shown to users | PASS | networkLabelFor → "Local Midnight devnet"; screenshots 16/21 |
+| No-match lists every source actually checked, Midnight involvement truthful | PASS | screenshot 22: FDA/hold/recall-scope/signature all listed; `midnight.involved: true` with active hold |
+| No fabricated FDA GTIN | PASS | QR = `(10)60401(17)280209`; card prints "GTIN/UPC: not published by the FDA advisory"; e2e asserts `00000000060401` count 0 |
+| Seeded proofs honest | PASS | genuine seed txids recorded in deployment record; fallback shows "previously verified during demo setup" |
+| Labeled lifecycle pill | PASS | pill progression observed live: "Sentinel signals 2/3" → "Sentinel verified · Trace 2/3" → "Hold active · Trace 2/3" → "Shared lineage verified 3/3" → "RecallLens scope authorized" |
+| Recall prerequisites + confirm dialog | PASS | server 400s before convergence/disclosure (e2e); predicate review + confirm step (screenshot 19); genuine tx `00e0a3a075…` |
+| Disclosure idempotent | PASS | duplicate POST → stored:false/alreadyExisted:true (e2e); reload keeps "Encrypted package sent", send button count 0 (live probe) |
+| Removal truth | PASS | "Partner-reported quarantine/removal" + evidenceBasis "off-chain — not a Midnight transaction…" (screenshot 23); idempotent |
+| MATCHES AUTHORIZED RECALL SCOPE | PASS | screenshot 21 + API headline |
+| Neutral no-match styling | PASS | info-blue treatment (screenshot 22) |
+| Outcome-neutral printed passports + print CSS | PASS | Passport A/B/Partner Shipment; print render (screenshot 02) white/black, QR quiet zone; all 4 QRs decode from full/cropped/rotated/450px-scaled card images via the browser BarcodeDetector (300px downscale honestly fails → OCR/manual fallback shown, screenshot 07) |
+| Nav overlap | SCREENSHOT ARTIFACT (not live): header stays fixed at top during scroll (DOM probe top:16px @ scrollY 321); new evidence uses viewport screenshots only |
+| Official vs private stats separated; shipping cases | PASS | screenshot 12 (two labeled rails); RecallImpact "shipping cases" |
+| Globe interpretation | PASS | persistent legend "Schematic anonymous proof activity / Not facilities or shipment routes" + arc hover label |
+| Live CDC states regression | FIXED | live page names no states in prose; adapter reuses cached official names only when the live title count matches (5) — states: 5 on live fetch |
+| Suites | contract 43/43 · gs1 22/22 · source-adapters 27/27 · schemas 4/4 · fixtures 8/8 · client 8/8 · Playwright 28/28 + 2 intentional mobile skips · TS clean · prod build OK |
+| Full live lifecycle (Flows A–H) | PASS on live devnet: signal tx settled, hold tx `0024d7b54c…`, trace 3/3 (tx `0001d3…e56341`), disclosure round-trip (rejected field withheld), recall tx `00e0a3a075…`, consumer hold/scope/no-match results, removal attestation |
+| Network leakage | PASS | /api/consumer/verify request body = normalized identifiers + public passport fields only; no image bytes; console 0 errors/0 warnings |
+
 Evidence captured this validation/hardening pass. Screenshots in
 `demo-evidence/` (`baseline/` before, `after/` post-fix). All commands re-run
 against the live stack (web :5173, API :8787 `live-devnet`, Midnight devnet up).

@@ -3,7 +3,7 @@
 Method: driven live through the browser (chrome-devtools MCP for the P0 build,
 Playwright MCP for this validation pass) against the running app (web :5173,
 API :8787 in `live-devnet` mode, Midnight devnet node/indexer/proof-server up).
-Screenshots in `demo-evidence/baseline/` and `demo-evidence/after/`.
+Screenshots referenced below were captured in evidence sets that have since been superseded and deleted; the current authoritative set is `demo-evidence/workflow/`.
 
 ## Baseline state (before this polish pass)
 
