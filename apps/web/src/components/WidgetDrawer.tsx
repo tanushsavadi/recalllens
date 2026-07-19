@@ -23,7 +23,7 @@ export function useLifecycle() {
 /** The labeled global status pill text — subsystem is always explicit. */
 function pillLabel(lc: NonNullable<ReturnType<typeof useLifecycle>["data"]>): string {
   if (lc.removal.completedAt) return "Removal confirmed";
-  if (lc.recall.authorized) return "RecallLens scope authorized";
+  if (lc.recall.authorized) return "Targeted action authorized";
   if (lc.trace.converged) {
     return lc.removal.confirmedBy.length > 0
       ? "Removal confirmation pending"
@@ -129,9 +129,9 @@ export function WidgetDrawer() {
                 value={lc.disclosure.sent ? "package sent" : "not sent"}
               />
               <LifecycleRow
-                label="Recall action"
+                label="Targeted action"
                 done={lc.recall.authorized}
-                value={lc.recall.authorized ? "authorized (RecallLens)" : "not authorized"}
+                value={lc.recall.authorized ? "authorized (RecallLens, not FDA)" : "not authorized"}
               />
               <LifecycleRow
                 label="Removal"

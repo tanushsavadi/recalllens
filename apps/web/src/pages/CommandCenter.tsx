@@ -52,7 +52,7 @@ export function CommandCenter() {
             </Link>
           </div>
           <div className="mt-3 border-t pt-2 hairline">
-            <div className="eyebrow mb-1">Current official case · CDC/FDA</div>
+            <div className="eyebrow mb-1">Current official public-health case · CDC</div>
             <p className="text-xs text-mid">
               {o?.title ?? "Cyclospora outbreak linked to shredded iceberg lettuce"}
             </p>

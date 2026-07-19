@@ -51,9 +51,9 @@ export function DemoLabels() {
         <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-slate-700">
           <li>Print on plain paper and cut out the cards.</li>
           <li>Tape <strong>Passport A</strong> to an ordinary (safe) bag of lettuce.</li>
-          <li><strong>Sentinel:</strong> approve the final signal as its owner, issue the hold, then scan Passport A as a consumer → proof-verified precautionary hold.</li>
+          <li><strong>Sentinel:</strong> approve the final signal as its owner, issue the hold, then scan Passport A as a consumer → signed passport matches the Midnight-anchored hold.</li>
           <li><strong>Traceback:</strong> as Meridian, scan the <strong>Partner Shipment Passport</strong> in the Partner Vault, review the predicate, approve → genuine proof → 3/3 shared lineage.</li>
-          <li><strong>Recall:</strong> after the investigator authorizes the targeted recall, scan Passport A again → matches authorized recall scope.</li>
+          <li><strong>Recall:</strong> after the investigator authorizes the targeted action, scan Passport A again → matches targeted recall scope.</li>
           <li>Scan <strong>Passport B</strong> anytime → no verified match (neutral result).</li>
           <li>Scan the <strong>FDA test card</strong> in Consumer Check → exact official recall match from the live/cached FDA source (lot + best-by; the advisory publishes no GTIN).</li>
         </ol>
