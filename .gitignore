@@ -24,3 +24,4 @@ test-results/
 .recalllens-deployment.json
 .playwright-mcp/
 .recalllens-workflow.json
+demo-evidence/
