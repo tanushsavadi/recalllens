@@ -102,3 +102,105 @@ test("investigator/consumer cannot run a partner proof (API role guards)", async
   });
   expect(sig.status()).toBe(403);
 });
+
+test("lifecycle prerequisites + idempotency (API-enforced)", async ({ request }) => {
+  // recall authorization is impossible before a hold exists
+  const early = await request.post(`${API}/sentinel/authorize-recall`, {
+    data: { caseId: CASE_ID },
+  });
+  expect(early.status()).toBe(400);
+  expect((await early.json()).error).toMatch(/no hold/i);
+
+  // drive sentinel → hold
+  await request.post(`${API}/sentinel/approve-signal`, {
+    data: { caseId: CASE_ID, signalId: "sig-exposure-1", actingOrgId: "org-quickserve" },
+  });
+  const hold = await request.post(`${API}/sentinel/issue-hold`, {
+    data: { caseId: CASE_ID, passportCommitments: ["ab".repeat(32)] },
+  });
+  expect(hold.ok()).toBeTruthy();
+  // hold is NOT reissuable
+  const hold2 = await request.post(`${API}/sentinel/issue-hold`, {
+    data: { caseId: CASE_ID, passportCommitments: ["ab".repeat(32)] },
+  });
+  expect(hold2.status()).toBe(400);
+  expect((await hold2.json()).error).toMatch(/already issued/i);
+
+  // recall still blocked: trace has not converged
+  const beforeConverged = await request.post(`${API}/sentinel/authorize-recall`, {
+    data: { caseId: CASE_ID },
+  });
+  expect(beforeConverged.status()).toBe(400);
+  expect((await beforeConverged.json()).error).toMatch(/convergence/i);
+
+  // converge the trace via the role-correct partner flow
+  await request.post(`${API}/investigator/request-match`, {
+    data: { caseId: CASE_ID, orgId: "org-meridian" },
+  });
+  await request.post(`${API}/partner/scan`, {
+    data: { caseId: CASE_ID, actingOrgId: "org-meridian", gtin: "00810099110042", lot: "NFP-SHRED-26164-07" },
+  });
+  const proof = await request.post(`${API}/partner/approve`, {
+    data: { caseId: CASE_ID, actingOrgId: "org-meridian" },
+  });
+  expect(proof.ok()).toBeTruthy();
+
+  // recall STILL blocked without a disclosure package
+  const noDisc = await request.post(`${API}/sentinel/authorize-recall`, {
+    data: { caseId: CASE_ID },
+  });
+  expect(noDisc.status()).toBe(400);
+  expect((await noDisc.json()).error).toMatch(/disclosure/i);
+
+  // disclosure send is idempotent per case+org
+  const pkg = {
+    caseId: CASE_ID,
+    orgId: "org-meridian",
+    approvedFields: ["sourceGln", "lotCode", "eventDate"],
+    rejectedFields: ["destinationGln"],
+    ciphertext: "AAAA",
+    iv: "BBBB",
+    ephemeralPublicKey: "{}",
+    authorizationHash: "cd".repeat(32),
+    ciphertextDigest: "ef".repeat(32),
+    createdAt: new Date().toISOString(),
+  };
+  const d1 = await request.post(`${API}/disclosure/package`, { data: pkg });
+  expect((await d1.json()).stored).toBe(true);
+  const d2 = await request.post(`${API}/disclosure/package`, { data: pkg });
+  const d2j = await d2.json();
+  expect(d2j.stored).toBe(false);
+  expect(d2j.alreadyExisted).toBe(true);
+
+  // now recall authorization succeeds — exactly once
+  const recall = await request.post(`${API}/sentinel/authorize-recall`, {
+    data: { caseId: CASE_ID },
+  });
+  expect(recall.ok()).toBeTruthy();
+  const recall2 = await request.post(`${API}/sentinel/authorize-recall`, {
+    data: { caseId: CASE_ID },
+  });
+  expect(recall2.status()).toBe(400);
+  expect((await recall2.json()).error).toMatch(/already authorized/i);
+
+  // removal is partner-reported, idempotent, and states its evidence basis
+  const rm1 = await request.post(`${API}/partner/confirm-removal`, {
+    data: { orgId: "org-meridian" },
+  });
+  const rm1j = await rm1.json();
+  expect(rm1j.removal.confirmedBy).toContain("org-meridian");
+  expect(rm1j.removal.evidenceBasis).toMatch(/off-chain/i);
+  expect(rm1j.removal.evidenceBasis).toMatch(/not a Midnight transaction/i);
+  const rm2 = await request.post(`${API}/partner/confirm-removal`, {
+    data: { orgId: "org-meridian" },
+  });
+  expect((await rm2.json()).removal.confirmedBy.filter((x: string) => x === "org-meridian")).toHaveLength(1);
+
+  // authoritative lifecycle snapshot reflects everything
+  const stage = await (await request.get(`${API}/workflow/${CASE_ID}/stage`)).json();
+  expect(stage.stage).toBe("recall-authorized");
+  expect(stage.hold.active).toBe(true);
+  expect(stage.trace.converged).toBe(true);
+  expect(stage.disclosure.sent).toBe(true);
+  expect(stage.recall.authorized).toBe(true);
+});
