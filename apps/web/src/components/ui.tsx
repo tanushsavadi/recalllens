@@ -65,8 +65,10 @@ export function Badge({
 export function SyntheticBadge() {
   return (
     <Badge tone="amber" title="Fictional records, not from any real company">
-      <span aria-hidden className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: "var(--amber)" }} />
-      Synthetic demonstration data
+      <span aria-hidden className="inline-block h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: "var(--amber)" }} />
+      <span className="whitespace-nowrap text-[10px] sm:text-[11px]">
+        Synthetic demonstration data
+      </span>
     </Badge>
   );
 }

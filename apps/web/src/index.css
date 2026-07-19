@@ -244,3 +244,74 @@ body {
   background: var(--line-strong);
   border-radius: 9999px;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   PRINT — the physical demo kit. White paper, black ink, high-contrast QR
+   with a quiet zone, no globe/aurora/nav/glass, one card per region so
+   nothing clips. Cards are sized to attach to a lettuce bag (~86mm wide).
+   ───────────────────────────────────────────────────────────────────────── */
+@media print {
+  :root, :root[data-theme="dark"], :root[data-theme="light"] {
+    color-scheme: light;
+    --bg-0: #ffffff;
+    --text-hi: #000000;
+    --text-mid: #222222;
+    --text-lo: #444444;
+    --line: #bbbbbb;
+    --line-strong: #888888;
+    --glass-fill: #ffffff;
+    --glass-fill-strong: #ffffff;
+    --glass-border: #999999;
+    --glass-hi: transparent;
+    --glass-shadow: transparent;
+    --glass-blur: 0px;
+    --verified: #1a6b46;
+    --amber: #7a4b00;
+    --outbreak: #8f221b;
+    --accent: #1f3d99;
+  }
+  body { background: #ffffff !important; color: #000000 !important; }
+  .app-aurora, header, footer, canvas,
+  .globe-stage,
+  .print\:hidden { display: none !important; }
+  /* WidgetDrawer + any fixed chrome */
+  .fixed { position: static !important; }
+  button { display: none !important; }
+  main { padding: 0 !important; max-width: none !important; }
+  /* No leading dead space: the kit starts at the top of page 1. */
+  main > * { margin-top: 0 !important; }
+
+  .glass, .print-card {
+    background: #ffffff !important;
+    border: 1.5px solid #000000 !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+  .glass::after { display: none !important; }
+
+  .print-card {
+    width: 86mm;
+    margin: 0 auto 8mm auto;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .print-card-head {
+    background: #000000 !important;
+    color: #ffffff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  /* QR quiet zone + maximum contrast (economical: only the QR is solid) */
+  .print-qr {
+    background: #ffffff !important;
+    border: 1px solid #000000 !important;
+    padding: 4mm !important;
+  }
+  .print-qr svg { display: block; }
+  .badge {
+    border: 1px solid #000000 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+}

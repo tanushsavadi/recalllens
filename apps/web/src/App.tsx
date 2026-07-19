@@ -102,7 +102,7 @@ export function App() {
           <Route path="/" element={<CommandCenter />} />
         </Routes>
       ) : (
-        <main className="relative z-10 mx-auto w-full max-w-7xl px-4 pb-16 pt-24 sm:px-6">
+        <main className="relative z-10 mx-auto w-full max-w-7xl px-4 pb-16 pt-32 sm:px-6 sm:pt-24">
           <Routes>
             <Route path="/sentinel" element={<Sentinel />} />
             <Route path="/investigation" element={<InvestigationWorkspace />} />
@@ -110,7 +110,7 @@ export function App() {
             <Route path="/consumer" element={<ConsumerCheck />} />
             <Route path="/labels" element={<DemoLabels />} />
           </Routes>
-          <footer className="mx-auto mt-10 max-w-3xl text-center text-[11px] leading-relaxed text-lo">
+          <footer className="mx-auto mt-10 max-w-3xl text-center text-xs leading-relaxed text-mid">
             RecallLens does not diagnose pathogens and does not replace
             epidemiologists, laboratory testing, FDA, or CDC investigations. It is
             a privacy-preserving coordination and traceback layer. Private partner

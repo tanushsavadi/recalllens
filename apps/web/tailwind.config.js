@@ -45,6 +45,12 @@ export default {
           DEFAULT: "var(--outbreak)",
           bg: "color-mix(in oklab, var(--outbreak) 15%, transparent)",
         },
+        // Neutral informational blue — used for the no-match consumer result
+        // so it never reads as a green "safe" celebration.
+        info: {
+          DEFAULT: "var(--accent)",
+          bg: "color-mix(in oklab, var(--accent) 12%, transparent)",
+        },
       },
       fontFamily: {
         sans: ["Geist", "ui-sans-serif", "system-ui", "sans-serif"],
