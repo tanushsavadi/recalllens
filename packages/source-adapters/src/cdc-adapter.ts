@@ -46,6 +46,19 @@ export async function getOutbreak(opts: FetchOptions = {}): Promise<CdcResult> {
     if (!res.ok) throw new Error(`CDC responded ${res.status}`);
     const html = await res.text();
     const parsed = parseCdcOutbreakHtml(html);
+    // Current CDC page revisions state only the COUNT ("in 5 States") in the
+    // title without naming the states in prose. When the live parse yields no
+    // names but the live title's count matches the cached official snapshot
+    // (an earlier revision of the SAME CDC page that did name them), reuse
+    // those official names. Never fabricated — both lists are CDC content.
+    if (parsed.states.length === 0) {
+      const cached = getCachedSnapshot();
+      const countMatch = parsed.title.match(/in\s+(\d+)\s+states/i);
+      const titleCount = countMatch ? Number(countMatch[1]) : null;
+      if (titleCount !== null && cached.outbreak.states.length === titleCount) {
+        parsed.states = [...cached.outbreak.states];
+      }
+    }
     const snapshot = toSnapshot(parsed, {
       source: "cdc-page",
       sourceUrl: CDC_SOURCE_URL,
