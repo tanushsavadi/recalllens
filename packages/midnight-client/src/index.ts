@@ -1,6 +1,7 @@
 export * from "./backend";
 export * from "./crypto";
 export { FallbackBackend } from "./fallback-backend";
+export { loadDeployment, type RecallLensDeployment } from "./deployment";
 
 import type { ChainBackend } from "./backend";
 import { FallbackBackend } from "./fallback-backend";

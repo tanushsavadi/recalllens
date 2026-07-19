@@ -89,19 +89,23 @@ async function main() {
       const tx = await commitSignalForOrg(session, address, org, cat);
       console.log(`  committed ${org.name} signal(cat ${cat}) tx=${tx.slice(0, 10)}`);
     }
+    const preSubmittedSignalTxIds: Record<string, string> = {};
     for (const orgId of ["org-northstar", "org-meridian"]) {
       const org = organizations.find((o) => o.orgId === orgId)!;
       const { txId } = await submitSignalForOrg(
         session, address, org, SIGNAL_CATEGORIES[orgId],
       );
+      preSubmittedSignalTxIds[orgId] = txId;
       console.log(`  ⚡ pre-submitted signal ${org.name} tx=${txId.slice(0, 10)}`);
     }
 
     const preSubmittedOrgIds: string[] = [];
+    const preSubmittedProofTxIds: Record<string, string> = {};
     for (let i = 0; i < nPre && i < proveable.length; i++) {
       const org = proveable[i];
       const { txId, blockHeight } = await proveForOrg(session, address, org);
       preSubmittedOrgIds.push(org.orgId);
+      preSubmittedProofTxIds[org.orgId] = txId;
       console.log(`  ⚡ pre-submitted proof ${org.name} tx=${txId.slice(0, 10)} block=${blockHeight}`);
     }
 
@@ -112,6 +116,8 @@ async function main() {
       deployedAt: new Date().toISOString(),
       seededOrgIds: proveable.map((o) => o.orgId),
       preSubmittedOrgIds,
+      preSubmittedProofTxIds,
+      preSubmittedSignalTxIds,
     });
     console.log("✅ wrote .recalllens-deployment.json");
   } finally {

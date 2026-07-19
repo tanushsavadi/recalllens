@@ -50,7 +50,12 @@ export async function tryCreateLiveBackend(): Promise<ChainBackend | null> {
   if (!cfg) return null;
   if (!(await devnetReachable(cfg.indexer))) return null;
 
-  const backend = new LiveDevnetBackend(dep.contractAddress, dep.network, dep.preSubmittedOrgIds ?? []);
+  const backend = new LiveDevnetBackend(
+    dep.contractAddress,
+    dep.network,
+    dep.preSubmittedOrgIds ?? [],
+    dep.preSubmittedProofTxIds ?? {},
+  );
   await backend.init();
   return backend;
 }
@@ -66,6 +71,8 @@ export class LiveDevnetBackend implements ChainBackend {
     private contractAddress: string,
     private network: string,
     private preSubmittedOrgIds: string[],
+    /** genuine settled txids recorded by the seed script, by orgId */
+    private preSubmittedProofTxIds: Record<string, string> = {},
   ) {}
 
   info() {
@@ -96,13 +103,19 @@ export class LiveDevnetBackend implements ChainBackend {
       );
       const alreadyProven = provenNullifiers.has(nullifier);
       const preSubmitted = this.preSubmittedOrgIds.includes(o.orgId);
+      // Pre-submitted proofs carry the GENUINE txid the seed script recorded;
+      // when an old deployment record lacks it, txId stays null and the UI
+      // says "previously verified during demo setup" — never a placeholder.
       this.proofs.set(o.orgId, {
         orgId: o.orgId,
         orgName: o.name,
         role: o.role,
         stage: alreadyProven ? "confirmed" : "queued",
         orgNullifier: alreadyProven ? nullifier : null,
-        txId: alreadyProven && preSubmitted ? "(pre-submitted)" : null,
+        txId:
+          alreadyProven && preSubmitted
+            ? (this.preSubmittedProofTxIds[o.orgId] ?? null)
+            : null,
         blockHeight: null,
         preSubmitted,
         error: null,

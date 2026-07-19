@@ -70,7 +70,10 @@ export class FallbackBackend implements ChainBackend {
               role: o.role,
               stage: (i < 2 ? "confirmed" : "queued") as OrgProof["stage"],
               orgNullifier: null,
-              txId: i < 2 ? "(pre-submitted)" : null,
+              // Fallback mode has no chain and therefore no txids — honestly
+              // null; the UI labels these "previously verified during demo
+              // setup" rather than showing fabricated transaction-like text.
+              txId: null,
               blockHeight: null,
               preSubmitted: i < 2,
               error: null,

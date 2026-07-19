@@ -27,6 +27,12 @@ export interface RecallLensDeployment {
   seededOrgIds: string[];
   /** how many org proofs were pre-submitted before the live demo */
   preSubmittedOrgIds: string[];
+  /** GENUINE settled tx ids for proofs pre-submitted at seed time, by orgId.
+   * These are real runtime receipts — never placeholders. Optional for
+   * backward compatibility with older deployment records. */
+  preSubmittedProofTxIds?: Record<string, string>;
+  /** GENUINE settled tx ids for Sentinel signals pre-submitted at seed time */
+  preSubmittedSignalTxIds?: Record<string, string>;
 }
 
 const FILE = ".recalllens-deployment.json";
