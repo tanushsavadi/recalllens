@@ -2,233 +2,162 @@
 
 **Find the source, not the secrets.**
 
-RecallLens is a privacy-preserving food-outbreak detection, traceback,
-targeted-recall, and consumer-notification network. When a foodborne outbreak is
-announced, the hardest and slowest step is traceback: figuring out which
-farm/processor/distributor lot is common across the sick people's meals. Today
-that requires companies to hand over supplier lists, customer lists, invoices,
-routes, and quantities to investigators — commercially sensitive data that
-companies are slow to share, which costs days and triggers over-broad recalls
-that destroy safe product.
+🎬 **Demo video (2 min):** https://youtu.be/56mWNj5ZfLg
+📄 Built for the **2026 Midnight Hackathon**.
 
-RecallLens lets farms, processors, distributors, and restaurants **prove that
-their private records converge on the same outbreak lineage without publishing
-any of those records**. It does this with zero-knowledge proofs on
-[Midnight](https://midnight.network). The result is faster traceback, tightly
-targeted recalls, and consumer notifications — while every company's supply
-graph stays private.
+## The problem
+
+When a foodborne outbreak is announced, the slowest step is traceback:
+finding the one farm, processor, or distributor lot that all the sick
+people's meals have in common. Today that means companies must hand over
+supplier lists, customer lists, invoices, routes, and quantities to
+investigators. That data is commercially sensitive, so companies hesitate,
+days pass, and regulators issue over-broad recalls that destroy safe food.
+
+## What RecallLens does
+
+RecallLens lets farms, processors, distributors, and restaurants **prove
+that their private records point at the same hidden supply lineage — without
+publishing any of those records**. It does this with zero-knowledge proofs
+on [Midnight](https://midnight.network). The result: earlier containment, a
+narrower investigation, targeted consumer warnings, and coordination that
+anyone can verify on-chain.
 
 > RecallLens does **not** diagnose pathogens and does **not** replace
-> epidemiologists, laboratory testing, FDA, or CDC investigations. It is a
-> privacy-preserving coordination and traceback layer. A zero-knowledge proof
-> shows that authenticated records satisfy the case predicates — it does not by
-> itself establish physical-world truth or that a lineage caused an outbreak.
+> epidemiologists, laboratory testing, FDA, or CDC investigations. A
+> zero-knowledge proof shows that authenticated records satisfy the case
+> predicates — it does not by itself establish physical-world truth or that
+> a lineage caused an outbreak.
 
-## What's real vs synthetic
+## How it works, in five steps
 
-- **Real public data:** the default demo is built around the **July 2026 CDC
-  Cyclospora outbreak linked to shredded iceberg lettuce served at Taco Bell**
-  (Indiana, Kentucky, Michigan, Ohio, West Virginia; >1,644 cases, 94
-  hospitalizations, 0 deaths, investigation Open, CDC last updated July 17 2026).
-  These facts are pulled through a source adapter and validated with Zod. See
-  [docs/SOURCE_PROVENANCE.md](docs/SOURCE_PROVENANCE.md).
-- **Synthetic private data:** every farm, processor, distributor, restaurant,
-  shipment, lot, receipt, and route is **fictional** (Sierra Verde Growers,
-  Northstar Fresh Processing, Meridian Cold Chain, QuickServe Restaurant Group)
-  and labeled **"Synthetic demonstration data"** in the UI. These do NOT
-  represent Taylor Farms, Taco Bell, or any real company's private data.
-
-The accurate privacy claim is: **zero raw partner records are written to the
-public Midnight ledger.** (The synthetic fixtures are checked in for
-reproducibility, so we do not claim they were never published anywhere.)
-
-## How it works (plain language, then blockchain)
-
-1. A trusted **registrar** (think: an accredited food-safety coordinator) admits
-   participating organizations by recording an opaque commitment to each org's
-   secret credential.
-2. Each organization keeps its supply records **locally** and anchors only a
-   **hiding commitment** of each trace event on-chain — no lot codes, quantities,
+1. A trusted **registrar** admits participating organizations by recording
+   an opaque commitment to each org's secret credential.
+2. Each organization keeps its supply records **local** and anchors only a
+   **hiding commitment** of each event on-chain — no lot codes, quantities,
    or partners.
-3. When CDC announces an outbreak, the registrar **opens a case** on-chain: the
-   product, the time window, and a hash of the official CDC source snapshot.
-4. Each organization runs a **zero-knowledge proof** that one of its committed
-   events matches the case and shares a secret 256-bit **lineage token** — without
-   revealing which event, which organization, or any field. The proof publishes
-   only an **anonymous lineage tag** and a **one-time nullifier**.
-5. When **three independent credentialed organizations** prove the same lineage
-   tag, the public **convergence** flag flips. The investigator sees "shared
-   supply lineage verified" — and can now target the recall to just that
-   lineage instead of the whole product line. (The UI is explicit that this
-   narrows the investigation; it does not establish contamination or
-   causation.)
+3. When a risk emerges, a **case** is opened on-chain: the product, the time
+   window, and a hash of the official source snapshot.
+4. Each organization runs a **zero-knowledge proof** that one of its
+   committed records matches the case and shares the same secret lineage
+   token. The proof publishes only an anonymous lineage tag and a one-time
+   nullifier — never the record, the org, or any field.
+5. When **three independent organizations** prove the same lineage, the
+   public convergence flag flips: "shared supply lineage verified." The
+   investigator can now target the action to just that lineage instead of a
+   whole product line.
 
-Under the hood: a single [Compact](https://docs.midnight.network) contract holds
-a Merkle tree of org credential commitments, a Merkle tree of event commitments,
-public case definitions, per-tag match counts, a public nullifier set, and the
-convergence flag. Proofs are generated by a local proof server and settled as
-real transactions; public state is read back through the Midnight indexer.
+One [Compact](https://docs.midnight.network) contract holds the org and
+event Merkle trees, the case definitions, the Sentinel early-warning state,
+match counts, nullifier sets, holds, and recall authorizations. Proofs are
+real ZK proofs generated by a local proof server, settled as real
+transactions, and read back through the Midnight indexer.
 
-## The application
+## The app
 
-- **Command Center** — the current CDC outbreak (live-or-cached, badged
-  honestly, with "Official source updated" vs "RecallLens retrieved" timestamps
-  and a refresh control), a signature **3D Outbreak & Evidence Globe** framing
-  the US with state-level affected markers and anonymous proof arcs that
-  converge on the real convergence, and the public Midnight proof status.
-- **Investigation Workspace** — an animated graph where three anonymized private
-  paths converge on a common lineage as each proof confirms, the public ledger
-  panel (only opaque hashes + counts), a simulated targeted-vs-broad recall
-  comparison derived from fixture data, and a selective-disclosure case room.
-- **Partner Vault** — a role switcher for the four fictional orgs, each with its
-  local EPCIS event table, showing exactly what stays private and what becomes
-  public on a match.
-- **Sentinel** — the Early Signal Radar: a clearly-labeled synthetic
-  pre-outbreak replay where independent organizations privately prove safety
-  signals (QA test, cold-chain excursion, exposure cluster) against the same
-  hidden lineage; a transparent threshold opens a confidential case and a
-  Midnight-anchored precautionary hold.
-- **Consumer Check** — **scan a physical product label** (GS1 QR via camera or
-  photo upload; native BarcodeDetector → ZXing fallback → local OCR → manual
-  correction — all on-device, raw image never uploaded). A Recall Intelligence
-  engine checks, in order: official FDA advisories (live-or-cached with
-  provenance), authorized RecallLens recalls, and proof-verified precautionary
-  holds — returning one of six explicit evidence levels with a full evidence
-  receipt. Consumers can never trigger a supply-chain partner's proof.
-- **Demo kit** (`/labels`) — printable **signed Product Passports** (neutral
-  Passport A, Passport B, and a Partner Shipment Passport — the printed cards
-  never state an expected outcome; the live network state decides) plus the
-  **FDA official-recall test card** (real public identifiers for the GreenWise
-  frozen-blueberries recall; the advisory publishes **no GTIN/UPC**, and the
-  card/QR therefore carries only lot + best-by — a missing identifier is never
-  fabricated). Print CSS renders high-contrast white cards.
+| Page | What it shows |
+|---|---|
+| **Command Center** | The current CDC outbreak (live-or-cached, badged honestly), a 3D globe with state-level markers and anonymous proof arcs, and the live lifecycle state. |
+| **Sentinel** | The early-warning replay: independent orgs privately prove safety signals; a transparent threshold detects early risk convergence and lets the investigator anchor a precautionary hold on Midnight. |
+| **Investigation** | The convergence graph (anonymous roles only), match requests, encrypted disclosure decryption, the simulated blast-radius comparison, and the targeted-action authorization. |
+| **Partner Vault** | Each partner's own records, the requested predicate, its own shipment scan and proof approval, selective disclosure, and removal reporting. |
+| **Consumer Check** | Scan a product (camera, photo, or manual — all decoding on-device) against official FDA recalls and Midnight-anchored RecallLens actions, with a full evidence receipt. |
+| **Labels** (`/labels`) | The printable demo kit: signed Product Passports A and B, a Partner Shipment Passport, and a real FDA official-recall test card. |
 
-### The globe is honest about geography
-It plots official data at **state granularity only** (state centroids, never a
-fabricated case/facility coordinate) and shows **coarse, anonymous** proof arcs —
-never real shipment routes. Legend distinguishes public / synthetic / proof /
-disclosed. It lazy-loads and falls back to a 2D cartogram on mobile,
-reduced-motion, or WebGL failure.
+## What's real, what's synthetic
+
+- **Real:** the CDC and FDA source data (live-or-cached with provenance),
+  the Compact contract and every proof and transaction on the local Midnight
+  devnet, local barcode/QR decoding, passport signature checks, and
+  in-browser disclosure encryption.
+- **Synthetic (labeled in the UI):** all partner organizations, their
+  records, the demo passports and credentials, and the pre-outbreak replay
+  scenario. Real companies do not publish their supply graphs — that is
+  exactly the problem RecallLens solves.
+- **Simulated (labeled):** the recall blast-radius comparison.
+
+The precise privacy claim: **zero raw partner records are written to the
+public Midnight ledger.**
 
 ## Quick start
 
-Prerequisites: Node 22+, Docker, the Compact CLI (`compact`), and the Midnight
-devnet running locally (node :9944, indexer :8088, proof-server :6300).
+Prerequisites: Node 22+, Docker, the Compact CLI, and the local Midnight
+devnet (node :9944, indexer :8088, proof-server :6300).
 
 ```bash
-# 1. Install
-npm install
-
-# 2. Compile the contract (full ZK) and run its tests
-npm run compile:contract
-npm run test:contract
-
-# 3. Start the local Midnight devnet (if not already up)
-npm run devnet:up
-
-# 4. Deploy + seed the demo: registers 4 orgs, opens the outbreak AND
-#    Sentinel cases, commits events + signals, pre-submits 2 of 3 Sentinel
-#    signal proofs and 2 of 3 trace proofs (the third of each is the live
-#    demo moment, owned by its role)
-npm run demo:seed
-
-# 5. Run the app (API + web)
-npm run demo:api         # live-devnet backend on :8787
-npm run dev:web          # web app on http://127.0.0.1:5173
+npm install              # 1. install
+npm run compile:contract # 2. compile the contract (full ZK) …
+npm run test:contract    #    … and run its 43 simulator tests
+npm run devnet:up        # 3. start the devnet (if not already up)
+npm run demo:seed        # 4. deploy + seed (Sentinel 2/3, trace 2/3, ~4 min)
+npm run demo:api         # 5. API on :8787 (live-devnet mode)
+npm run dev:web          #    web app on http://127.0.0.1:5173
 ```
 
-Open http://127.0.0.1:5173. The dashboard works read-only with no wallet.
-Follow docs/DEMO_SCRIPT.md: approve the third Sentinel signal as its owning
-role, issue the precautionary hold, then — acting as Meridian in the Partner
-Vault — scan the Partner Shipment Passport and approve the third genuine trace
-proof. The investigator can only REQUEST proofs; each partner generates its
-own. Recall authorization is a separate, predicate-reviewed action that the
-server refuses before trace convergence and partner disclosure; disclosure
-sends and removal reports are idempotent. Removal is a partner-reported
-off-chain attestation and is labeled as such.
+Then follow [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md), or watch the
+[demo video](https://youtu.be/56mWNj5ZfLg) first.
 
-### Verify the genuine on-chain proof independently
+Verify the genuine on-chain proof independently — deploys a fresh contract,
+runs 3 real ZK proofs, asserts convergence, and asserts the nullifier rejects
+a duplicate:
 
 ```bash
-# Deploys a fresh contract, runs 3 real ZK proofs, asserts convergence,
-# and asserts a duplicate proof is rejected by the nullifier. Prints tx ids
-# and the decoded public state.
-npm run e2e:onchain      # = e2e-convergence -w @recalllens/midnight-client
+npm run e2e:onchain
 ```
 
-### Tests, build, and E2E
+Other useful commands:
 
 ```bash
-npm test                 # all workspace unit/simulator tests
-npm run build            # production builds (web build must pass)
-npm run health           # devnet + API health check
-cd e2e && npx playwright test   # central demo journey (desktop + mobile)
+npm test                        # all workspace test suites
+npm run build                   # production builds
+npm run health                  # devnet + API health check
+cd e2e && npx playwright test   # E2E (desktop + mobile)
+npm run demo:reset              # clear state; then demo:seed again
 ```
 
-### Reset
+## Repository map
 
-```bash
-npm run demo:reset       # remove local deployment record + wallet state
 ```
-
-## Network & contract
-
-- Default network: **local Midnight devnet** (`undeployed`). The deploy script
-  writes `.recalllens-deployment.json` at the repo root with the contract
-  address, case id, and which proofs were pre-submitted.
-- To target a public network, use `--network preview|preprod` on the scripts and
-  provide a funded seed via `MIDNIGHT_WALLET_SEED` (see `.env.example`).
+apps/web               React app (all pages above)
+apps/public-data-api   Hono API: sources, on-chain reads, role-gated actions
+packages/contract      Compact contract + witnesses + simulator tests
+packages/midnight-client  wallet, deploy/seed scripts, live + fallback backend
+packages/gs1           GS1 parsing, signed passports, disclosure encryption
+packages/schemas       Zod schemas shared across the workspace
+packages/demo-fixtures synthetic orgs, events, signals (labeled)
+packages/source-adapters  CDC/FDA adapters + the consumer recall engine
+e2e                    Playwright tests
+docs                   documentation (see docs/README.md)
+```
 
 ## Documentation
 
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — system diagram, proof lifecycle, data boundary
-- [docs/PRIVACY_AUDIT.md](docs/PRIVACY_AUDIT.md) — every public/private field and every `disclose()`
-- [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) — trust assumptions and mitigations
-- [docs/SOURCE_PROVENANCE.md](docs/SOURCE_PROVENANCE.md) — real government sources and synthetic labels
-- [docs/DECISIONS.md](docs/DECISIONS.md) — material architecture/privacy decisions
-- [docs/BUILD_STATE.md](docs/BUILD_STATE.md) — verified environment, versions, and evidence
-- [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md) — the two-minute demo
-- [docs/DEVPOST_SUBMISSION.md](docs/DEVPOST_SUBMISSION.md) — submission text
+Start at [docs/README.md](docs/README.md). Highlights:
 
-## Known limitations
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md) — system diagram, proof lifecycle, Sentinel, data boundary
+- [PRODUCT_WORKFLOW.md](docs/PRODUCT_WORKFLOW.md) — roles, flows, consumer evidence levels
+- [PRIVACY_AUDIT.md](docs/PRIVACY_AUDIT.md) — every public field and every `disclose()`
+- [THREAT_MODEL.md](docs/THREAT_MODEL.md) — trust assumptions and mitigations
+- [EVIDENCE.md](docs/EVIDENCE.md) — versions, verified on-chain runs, test results
+- [DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md) — the live demo, step by step
+- [JUDGE_FAQ.md](docs/JUDGE_FAQ.md) — direct answers to the hard questions
 
-- Admission is gated by a single registrar credential (the trust anchor). A
-  malicious registrar could admit colluding orgs — the same trust any
-  credentialing authority carries. See THREAT_MODEL.md.
-- Selective disclosure genuinely encrypts approved fields in-browser
-  (ephemeral ECDH P-256 → HKDF → AES-256-GCM; ciphertext-only transit;
-  rejected fields never enter the plaintext). The demo's recipient keys are
-  checked-in synthetic credentials — production needs managed key exchange.
-- Removal confirmation is a **partner-reported off-chain attestation**
-  recorded by the RecallLens service — not a Midnight transaction and not
-  cryptographically verified; the UI labels it exactly that way.
-- Demo fixture secrets are public constants for reproducibility — never reuse in
-  production.
-- The recall blast-radius comparison is **simulated** from fixture data and is
-  labeled as such.
-- The scanned GTIN+lot are **lookup keys**; scanning an arbitrary UPC does NOT
-  reveal a product's real supply chain. "No verified intersection found" is NOT
-  proof a product is safe — the UI says so and links to CDC/FDA.
-- **Vercel preview:** a self-contained static preview build (deterministic
-  fallback backend, globe textures from a CDN) is **build-verified** and
-  deploy-ready (`/tmp` tree builds cleanly). It was not left hosted in this
-  session; deploy with the steps below. The live, genuine on-chain demo runs
-  locally (the proof server/node/indexer are local).
+## Known limitations (also disclosed in-product)
 
-### Deploy the preview to Vercel
-
-The static preview uses the deterministic-fallback backend (clearly badged) so
-it works without a live devnet:
-
-```bash
-cd apps/web
-VITE_STATIC_DEMO=1 VITE_GLOBE_TEX_BASE=https://unpkg.com/three-globe/example/img/ npm run build
-npx vercel deploy dist --prebuilt   # or: vercel --prod for production
-```
+- Registrar admission is a single-credential trust anchor — the same trust
+  any credentialing authority carries (see THREAT_MODEL.md).
+- Hold/recall membership is resolved service-side against the
+  Midnight-anchored commitment in this MVP; production would use a
+  membership proof or private set intersection.
+- Removal confirmation is a partner-reported, off-chain attestation and is
+  labeled exactly that.
+- Demo issuer/investigator keys are checked-in synthetic credentials.
+- The blast-radius comparison is simulated from fixture data and labeled.
+- A scanned GTIN + lot are lookup keys only; "no verified match" is not
+  proof a product is safe — the UI says so.
 
 ## Production roadmap
 
-Registrar as a multi-sig / accredited body with on-chain rotation; real signed
-org attestations; larger anonymity sets with enforced fresh-root usage;
-encrypted selective-disclosure delivery; barcode/OCR/receipt capture (local);
-an investigator MCP with human-confirmation gates.
+Registrar as an accredited multi-sig body; real signed org attestations;
+larger anonymity sets; privacy-aware hold membership (membership proof /
+PSI); managed disclosure key exchange; chain-anchored removal attestations.
