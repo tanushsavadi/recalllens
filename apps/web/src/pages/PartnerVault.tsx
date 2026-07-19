@@ -24,6 +24,15 @@ import { ProofProgress } from "../components/ProofProgress";
 const DISCLOSABLE = ["sourceGln", "lotCode", "eventDate", "destinationGln"] as const;
 type DiscField = (typeof DISCLOSABLE)[number];
 
+/** Human-readable display labels for disclosure fields. Display-only: the
+ * underlying EPCIS/GS1 payload keys, schema, and encryption are unchanged. */
+export const DISCLOSURE_FIELD_LABELS: Record<DiscField, string> = {
+  sourceGln: "Origin facility",
+  lotCode: "Shipment lot",
+  eventDate: "Shipment date",
+  destinationGln: "Destination facility",
+};
+
 export function PartnerVault() {
   const qc = useQueryClient();
   const [activeOrgId, setActiveOrgId] = useState(organizations[0].orgId);
@@ -96,7 +105,9 @@ export function PartnerVault() {
         ))}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1.5fr_1fr]">
+      {/* items-start: the ledger card sizes to its contents instead of
+          stretching to match the (often much taller) right column. */}
+      <div className="grid items-start gap-6 lg:grid-cols-[1.5fr_1fr]">
         <Card className="p-5">
           <SectionTitle hint={SYNTHETIC_LABEL}>
             {activeOrg.name} — local EPCIS event ledger
@@ -353,12 +364,13 @@ function DisclosurePanel({ orgId, proven }: { orgId: string; proven: boolean }) 
           {DISCLOSABLE.map((f) => (
             <label key={f} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm">
               <span>
-                <Mono>{f}</Mono>
+                <span className="font-medium text-hi">{DISCLOSURE_FIELD_LABELS[f]}</span>
+                <Mono className="ml-1.5 text-slate-400">· {f}</Mono>
                 <span className="ml-2 text-xs text-slate-400">
                   {f === "sourceGln" && ev.sourceGln}
                   {f === "lotCode" && ev.lotCode}
                   {f === "eventDate" && ev.eventTime.slice(0, 10)}
-                  {f === "destinationGln" && "…withheld by default"}
+                  {f === "destinationGln" && "— withheld by partner"}
                 </span>
               </span>
               <input

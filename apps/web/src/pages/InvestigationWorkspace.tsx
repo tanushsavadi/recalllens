@@ -17,6 +17,15 @@ import { RecallImpact } from "../components/RecallImpact";
 import { decryptDisclosure } from "@recalllens/gs1";
 import type { MatchRequest } from "@recalllens/schemas";
 
+/** Human-readable labels for disclosure payload keys (display-only). */
+const FIELD_LABELS: Record<string, string> = {
+  sourceGln: "Origin facility",
+  lotCode: "Shipment lot",
+  eventDate: "Shipment date",
+  destinationGln: "Destination facility",
+};
+const fieldLabel = (k: string) => FIELD_LABELS[k] ?? k;
+
 export function InvestigationWorkspace() {
   const qc = useQueryClient();
   const status = useQuery({
@@ -294,7 +303,7 @@ function RecallActionPanel({
               </div>
               <div className="flex justify-between gap-3">
                 <dt>Effect</dt>
-                <dd>consumers scanning a matching signed passport see “Matches authorized recall scope”</dd>
+                <dd>consumers scanning a matching signed passport see “Matches targeted recall scope”</dd>
               </div>
               <div className="flex justify-between gap-3">
                 <dt>Authority</dt>
@@ -405,8 +414,8 @@ function DisclosureDecryptPanel() {
       ) : (
         <div className="flex flex-col gap-3">
           <dl className="text-xs text-slate-500">
-            <div className="flex justify-between"><dt>Approved fields</dt><dd className="text-mid">{p.approvedFields.join(", ")}</dd></div>
-            <div className="flex justify-between"><dt>Rejected fields</dt><dd className="text-mid">{p.rejectedFields.join(", ") || "—"}</dd></div>
+            <div className="flex justify-between"><dt>Approved fields</dt><dd className="text-mid">{p.approvedFields.map(fieldLabel).join(", ")}</dd></div>
+            <div className="flex justify-between"><dt>Withheld by partner</dt><dd className="text-mid">{p.rejectedFields.map(fieldLabel).join(", ") || "—"}</dd></div>
             <div className="flex justify-between"><dt>Authorization hash</dt><dd><Mono>{truncateHex(p.authorizationHash, 10, 8)}</Mono></dd></div>
             <div className="flex justify-between"><dt>Ciphertext digest</dt><dd><Mono>{truncateHex(p.ciphertextDigest, 10, 8)}</Mono></dd></div>
           </dl>
@@ -429,8 +438,11 @@ function DisclosureDecryptPanel() {
               <Badge tone="verified">RELEVANT SHIPMENT IDENTIFIED</Badge>
               <dl className="mt-2 space-y-1 text-sm">
                 {Object.entries(decrypted).map(([k, v]) => (
-                  <div key={k} className="flex justify-between gap-3">
-                    <dt className="text-slate-600">{k}</dt>
+                  <div key={k} className="flex items-baseline justify-between gap-3">
+                    <dt className="text-slate-600">
+                      {fieldLabel(k)}
+                      <Mono className="ml-1.5 text-slate-400">· {k}</Mono>
+                    </dt>
                     <dd><Mono>{v}</Mono></dd>
                   </div>
                 ))}
