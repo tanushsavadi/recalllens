@@ -1,15 +1,16 @@
 import { Badge } from "./ui";
 
 /**
- * Persistent role-simulation disclosure, shown on every role surface.
+ * Persistent role-simulation disclosure, shown on the investigator and
+ * partner surfaces. Consumer Check deliberately does NOT render this —
+ * consumers are real end users, not simulated roles.
  */
-export function RoleBanner({ role }: { role: "investigator" | "partner" | "consumer" }) {
+export function RoleBanner({ role }: { role: "investigator" | "partner" }) {
   const label = {
     investigator: "Investigator role",
     partner: "Supply-chain partner role",
-    consumer: "Consumer role",
   }[role];
-  const tone = { investigator: "info", partner: "amber", consumer: "verified" } as const;
+  const tone = { investigator: "info", partner: "amber" } as const;
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Badge tone={tone[role]}>{label}</Badge>

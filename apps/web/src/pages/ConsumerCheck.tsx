@@ -4,16 +4,18 @@ import type { EvidenceReceipt } from "@recalllens/schemas";
 import { passportFromDigitalLink } from "@recalllens/gs1";
 import { api } from "../lib/api";
 import { Card, Badge, SectionTitle, SyntheticBadge, Mono, truncateHex } from "../components/ui";
-import { RoleBanner } from "../components/RoleBanner";
 import { ScanProduct, type ScanConfirm } from "../components/ScanProduct";
 
 /**
  * Consumer Check — Scan → Confirm → Verify evidence → Result.
  *
+ * This screen reads as a consumer product, not a role simulator: no role
+ * badge or demo-role copy (unlike the investigator/partner surfaces).
+ *
  * Verification order (server-side, shown in the receipt):
  *   1. official FDA advisory identifiers
  *   2. authorized RecallLens recall scope
- *   3. proof-verified Sentinel hold
+ *   3. Midnight-anchored Sentinel hold
  *   4. no / insufficient evidence
  * The consumer NEVER triggers a supply-chain partner proof.
  *
@@ -61,13 +63,12 @@ export function ConsumerCheck() {
         <div>
           <h1 className="text-xl font-extrabold tracking-tight">Consumer Check</h1>
           <p className="text-sm text-slate-500">
-            Check a product against official recalls and proof-verified
-            RecallLens holds.
+            Scan a product to check official recalls and privacy-preserving
+            RecallLens safety actions.
           </p>
         </div>
         <SyntheticBadge />
       </div>
-      <RoleBanner role="consumer" />
 
       {!current && !verify.isPending && (
         <Card className="p-5">
@@ -89,8 +90,8 @@ export function ConsumerCheck() {
         <Card className="p-5 text-center">
           <div className="text-sm font-semibold text-hi">Checking evidence sources…</div>
           <p className="mt-1 text-xs text-slate-500">
-            Official FDA advisories → authorized RecallLens recalls →
-            proof-verified holds. Only the confirmed identifiers leave this
+            Official FDA advisories → RecallLens targeted actions →
+            Midnight-anchored holds. Only the confirmed identifiers leave this
             device.
           </p>
           <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-surface-muted">
@@ -156,18 +157,31 @@ function ResultCard({
   scanned: ScanConfirm | null;
 }) {
   const style = LEVEL_STYLE[receipt.level];
+  const headlineColor = {
+    outbreak: "var(--outbreak)",
+    amber: "var(--amber)",
+    verified: "var(--verified)",
+    info: "var(--accent)",
+    neutral: "var(--text-mid)",
+  }[style.tone];
   return (
     <Card className={`p-5 ${style.bg}`}>
-      <Badge tone={style.tone}>{receipt.headline}</Badge>
+      {/* Primary result headline — sized to survive 1080p video compression */}
+      <h2
+        className="text-base font-extrabold uppercase leading-snug tracking-wide sm:text-lg"
+        style={{ color: headlineColor }}
+      >
+        {receipt.headline}
+      </h2>
       <p className="mt-2 text-sm text-slate-700">{receipt.explanation}</p>
-      <p className="mt-2 text-sm font-medium text-slate-800">{receipt.guidance}</p>
+      <p className="mt-2 text-sm font-semibold text-slate-800">{receipt.guidance}</p>
 
       {/* Sources checked — plain language, always visible */}
       <div className="mt-3 rounded-lg bg-surface-muted px-3 py-2">
         <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
           Sources checked
         </div>
-        <ul className="mt-1 space-y-0.5 text-xs text-slate-600">
+        <ul className="mt-1 space-y-0.5 text-sm text-slate-600">
           {receipt.sourcesChecked.map((c) => (
             <li key={c.system} className="flex items-baseline justify-between gap-3">
               <span>{c.system}</span>

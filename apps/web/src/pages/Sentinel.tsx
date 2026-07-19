@@ -220,8 +220,9 @@ export function Sentinel() {
                 </dl>
                 <p className="mt-2 text-[11px] text-slate-500">
                   Matching downstream partners receive confidential hold
-                  requests; consumers scanning an affected passport now see a
-                  proof-verified precautionary hold — not an official recall.
+                  requests; consumers scanning an affected passport now see
+                  that it matches this Midnight-anchored hold — not an
+                  official recall.
                 </p>
                 <Link to="/consumer" className="btn btn-glass mt-2 w-full text-xs">
                   → Scan the lettuce passport as a consumer
