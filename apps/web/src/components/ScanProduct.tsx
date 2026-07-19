@@ -3,7 +3,15 @@
  *
  * Local-only pipeline: camera (BarcodeDetector → ZXing) or image upload → parse
  * GS1 Digital Link / element string → OCR-assisted confirm of lot/date → user
- * confirms → onConfirm(gtin, lot, expiry). Raw imagery never leaves the device.
+ * confirms → onConfirm(normalized scan). Raw imagery never leaves the device.
+ *
+ * SCAN-STATE ISOLATION: every scan attempt produces one immutable normalized
+ * scan object identified by a monotonically increasing sequence number.
+ * Starting ANY new attempt (camera, upload, manual, Restart) first clears the
+ * complete previous state — parsed payload, all fields, product name, method,
+ * errors. An async decode that finishes after a newer attempt started is
+ * dropped (its sequence number is stale), so an older scan can never
+ * overwrite a newer one. No field ever leaks between scans.
  */
 import { useEffect, useRef, useState } from "react";
 import { parseScan, type Gs1Data } from "@recalllens/gs1";
@@ -19,11 +27,42 @@ import { Badge } from "./ui";
 
 type Stage = "idle" | "camera" | "detecting" | "confirm" | "error";
 
+/** How the identifiers physically arrived. */
+export type ScanOrigin = "passport-qr" | "identifier-qr" | "manual";
+
 export interface ScanConfirm extends Gs1Data {
   method: ScanMethod;
+  origin: ScanOrigin;
   /** the raw scanned QR/barcode payload (for passport signature extraction) */
   rawText: string | null;
   productName?: string;
+}
+
+/** One scan attempt's complete state — replaced wholesale, never merged. */
+interface ScanState {
+  seq: number;
+  stage: Stage;
+  method: ScanMethod;
+  fields: Gs1Data;
+  rawText: string | null;
+  productName: string;
+  error: string | null;
+  ocrRunning: boolean;
+  permissionDenied: boolean;
+}
+
+function freshScan(seq: number, stage: Stage = "idle"): ScanState {
+  return {
+    seq,
+    stage,
+    method: "manual",
+    fields: { gtin: "", lot: "", expiry: "" },
+    rawText: null,
+    productName: "",
+    error: null,
+    ocrRunning: false,
+    permissionDenied: false,
+  };
 }
 
 export interface ScanProductProps {
@@ -35,14 +74,8 @@ export interface ScanProductProps {
 export function ScanProduct({ onConfirm, allowProductName }: ScanProductProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const [stage, setStage] = useState<Stage>("idle");
-  const [method, setMethod] = useState<ScanMethod>("manual");
-  const [fields, setFields] = useState<Gs1Data>({ gtin: "", lot: "", expiry: "" });
-  const [rawText, setRawText] = useState<string | null>(null);
-  const [productName, setProductName] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [ocrRunning, setOcrRunning] = useState(false);
-  const [permissionDenied, setPermissionDenied] = useState(false);
+  const seqRef = useRef(0);
+  const [scan, setScan] = useState<ScanState>(() => freshScan(0));
 
   useEffect(() => {
     return () => stopCamera();
@@ -53,46 +86,58 @@ export function ScanProduct({ onConfirm, allowProductName }: ScanProductProps) {
     streamRef.current = null;
   }
 
+  /** Begin a brand-new scan attempt: clears ALL previous state. */
+  function beginAttempt(stage: Stage): number {
+    stopCamera();
+    const seq = ++seqRef.current;
+    setScan(freshScan(seq, stage));
+    return seq;
+  }
+
+  /** Apply an update only if it belongs to the current attempt. */
+  function applyIfCurrent(seq: number, update: (s: ScanState) => ScanState) {
+    setScan((s) => (s.seq === seq ? update(s) : s));
+  }
+
   async function startCamera() {
-    setError(null);
-    setPermissionDenied(false);
+    const seq = beginAttempt("camera");
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "environment" },
       });
+      if (seqRef.current !== seq) {
+        // a newer attempt started while permission was pending
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
       streamRef.current = stream;
-      setStage("camera");
       // wait a tick for the video element
       requestAnimationFrame(() => {
-        if (videoRef.current) {
+        if (videoRef.current && seqRef.current === seq) {
           videoRef.current.srcObject = stream;
           videoRef.current.play().catch(() => {});
-          scanLoop();
+          scanLoop(seq);
         }
       });
-    } catch (e) {
-      setPermissionDenied(true);
-      setStage("error");
-      setError(
-        "Camera unavailable or permission denied. Upload a photo of the label or enter the values manually.",
-      );
+    } catch {
+      applyIfCurrent(seq, (s) => ({
+        ...s,
+        stage: "error",
+        permissionDenied: true,
+        error:
+          "Camera unavailable or permission denied. Upload a photo of the label or enter the values manually.",
+      }));
     }
   }
 
-  let scanning = false;
-  async function scanLoop() {
-    if (scanning) return;
-    scanning = true;
+  function scanLoop(seq: number) {
     const tick = async () => {
-      if (!videoRef.current || !streamRef.current) {
-        scanning = false;
-        return;
-      }
+      if (seqRef.current !== seq || !videoRef.current || !streamRef.current) return;
       const raw = await detectFromSource(videoRef.current).catch(() => null);
+      if (seqRef.current !== seq) return; // stale decode — drop
       if (raw) {
-        handleRaw(raw.text, raw.method);
         stopCamera();
-        scanning = false;
+        handleRaw(seq, raw.text, raw.method);
         return;
       }
       setTimeout(tick, 600);
@@ -100,76 +145,107 @@ export function ScanProduct({ onConfirm, allowProductName }: ScanProductProps) {
     tick();
   }
 
-  function handleRaw(text: string, m: ScanMethod) {
+  function originOf(rawText: string | null): ScanOrigin {
+    if (!rawText) return "manual";
+    return rawText.includes("rlp=") ? "passport-qr" : "identifier-qr";
+  }
+
+  function handleRaw(seq: number, text: string, m: ScanMethod) {
     try {
       const parsed = parseScan(text);
-      setFields(parsed.data);
-      setRawText(text);
-      setMethod(m);
-      setStage("confirm");
-      setError(null);
+      applyIfCurrent(seq, (s) => ({
+        ...s,
+        stage: "confirm",
+        method: m,
+        fields: parsed.data,
+        rawText: text,
+        error: null,
+      }));
     } catch (e) {
-      setError(
-        `Scanned code is not a recognized GS1 label (${
+      applyIfCurrent(seq, (s) => ({
+        ...s,
+        stage: "error",
+        error: `Scanned code is not a recognized GS1 label (${
           e instanceof Error ? e.message : String(e)
         }). Try again or enter values manually.`,
-      );
-      setStage("error");
+      }));
     }
   }
 
   async function handleFile(file: File) {
-    setStage("detecting");
-    setError(null);
+    const seq = beginAttempt("detecting");
     try {
       const img = await fileToImage(file);
       const raw = await detectFromSource(img);
+      if (seqRef.current !== seq) return; // a newer scan superseded this one
       if (raw) {
-        handleRaw(raw.text, raw.method);
+        handleRaw(seq, raw.text, raw.method);
         return;
       }
       // No barcode → OCR the printed text as a fallback.
-      setOcrRunning(true);
+      applyIfCurrent(seq, (s) => ({ ...s, ocrRunning: true }));
       const ocr = await ocrImage(img);
-      setOcrRunning(false);
+      if (seqRef.current !== seq) return;
       const extracted = extractLotDateFromText(ocr.text);
-      setFields({ gtin: "", lot: extracted.lot ?? "", expiry: extracted.expiry ?? "" });
-      setMethod("ocr");
-      setStage("confirm");
-      if (!extracted.lot) {
-        setError(
-          "No barcode found and OCR could not read a lot code — please confirm/enter the fields manually.",
-        );
-      }
+      applyIfCurrent(seq, (s) => ({
+        ...s,
+        stage: "confirm",
+        method: "ocr",
+        ocrRunning: false,
+        fields: { gtin: "", lot: extracted.lot ?? "", expiry: extracted.expiry ?? "" },
+        error: extracted.lot
+          ? null
+          : "No barcode found and OCR could not read a lot code — please confirm/enter the fields manually.",
+      }));
     } catch {
-      setOcrRunning(false);
-      setStage("error");
-      setError("Could not read that image. Enter the values manually.");
+      applyIfCurrent(seq, (s) => ({
+        ...s,
+        stage: "error",
+        ocrRunning: false,
+        error: "Could not read that image. Enter the values manually.",
+      }));
     }
   }
 
   function beginManual() {
-    setMethod("manual");
-    setFields({ gtin: "", lot: "", expiry: "" });
-    setRawText(null);
-    setStage("confirm");
-    setError(null);
+    beginAttempt("confirm");
   }
+
+  function restart() {
+    beginAttempt("idle");
+  }
+
+  const { stage, method, fields, rawText, productName, error, ocrRunning, permissionDenied } =
+    scan;
+
+  // Confirm requires at least one usable identifier. A GTIN, when present,
+  // must look like one — but a label may honestly carry no GTIN (the FDA
+  // advisory publishes none), in which case lot (or product name, consumer
+  // flow) suffices.
+  const gtinOk = fields.gtin === "" || /^\d{8,14}$/.test(fields.gtin);
+  const hasIdentifier =
+    /^\d{8,14}$/.test(fields.gtin) ||
+    !!fields.lot ||
+    (!!allowProductName && !!productName);
+  const canConfirm = gtinOk && hasIdentifier;
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="rounded-lg border border-verified/40 bg-verified-bg px-3 py-2 text-xs text-verified-fg">
-        🔒 All scanning and OCR run locally in your browser. The raw image never
-        leaves your device.
+      <div className="flex items-center gap-2 rounded-lg border border-verified/40 bg-verified-bg px-3 py-2 text-xs text-verified-fg">
+        <LockIcon />
+        <span>
+          All scanning and OCR run locally in your browser. The raw image never
+          leaves your device.
+        </span>
       </div>
 
       {stage === "idle" && (
         <div className="flex flex-col gap-3">
-          <button className="btn-primary" onClick={startCamera}>
-            📷 Scan with camera
+          <button className="btn btn-primary" onClick={startCamera}>
+            <CameraIcon /> Scan with camera
           </button>
-          <label className="btn-ghost cursor-pointer text-center">
-            🖼 Upload a photo of the label
+          <label className="btn btn-glass cursor-pointer">
+            <ImageIcon /> Upload a photo of the label
             <input
               type="file"
               accept="image/*"
@@ -177,8 +253,8 @@ export function ScanProduct({ onConfirm, allowProductName }: ScanProductProps) {
               onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
             />
           </label>
-          <button className="btn-ghost" onClick={beginManual}>
-            ⌨ Enter values manually
+          <button className="btn btn-glass" onClick={beginManual}>
+            <KeyboardIcon /> Enter values manually
           </button>
           {!barcodeDetectorSupported() && (
             <p className="text-[11px] text-slate-400">
@@ -205,11 +281,8 @@ export function ScanProduct({ onConfirm, allowProductName }: ScanProductProps) {
             Point at the QR / barcode…
           </div>
           <button
-            className="absolute right-2 top-2 rounded bg-white/90 px-2 py-1 text-xs font-semibold"
-            onClick={() => {
-              stopCamera();
-              setStage("idle");
-            }}
+            className="absolute right-2 top-2 rounded bg-white/90 px-2 py-1 text-xs font-semibold text-slate-900"
+            onClick={restart}
           >
             Cancel
           </button>
@@ -238,27 +311,33 @@ export function ScanProduct({ onConfirm, allowProductName }: ScanProductProps) {
           <Field
             label="GTIN (AI 01)"
             value={fields.gtin}
-            onChange={(v) => setFields((f) => ({ ...f, gtin: v }))}
-            placeholder="00810099110042"
+            onChange={(v) =>
+              setScan((s) => ({ ...s, fields: { ...s.fields, gtin: v } }))
+            }
+            placeholder="14-digit GTIN (leave empty if not printed)"
           />
           <Field
             label="Lot / batch (AI 10)"
             value={fields.lot ?? ""}
-            onChange={(v) => setFields((f) => ({ ...f, lot: v }))}
-            placeholder="NFP-SHRED-26164-07"
+            onChange={(v) =>
+              setScan((s) => ({ ...s, fields: { ...s.fields, lot: v } }))
+            }
+            placeholder="Printed lot code"
           />
           <Field
             label="Best-by (AI 17)"
             value={fields.expiry ?? ""}
-            onChange={(v) => setFields((f) => ({ ...f, expiry: v }))}
-            placeholder="2026-06-28"
+            onChange={(v) =>
+              setScan((s) => ({ ...s, fields: { ...s.fields, expiry: v } }))
+            }
+            placeholder="YYYY-MM-DD"
           />
           {allowProductName && (
             <Field
               label="Product name / brand (optional)"
               value={productName}
-              onChange={setProductName}
-              placeholder="GreenWise Organic Frozen Blueberries"
+              onChange={(v) => setScan((s) => ({ ...s, productName: v }))}
+              placeholder="As printed on the package"
             />
           )}
           <p className="text-[11px] text-slate-400">
@@ -269,12 +348,13 @@ export function ScanProduct({ onConfirm, allowProductName }: ScanProductProps) {
           </p>
           <div className="flex gap-2">
             <button
-              className="btn-primary flex-1"
-              disabled={!/^\d{8,14}$/.test(fields.gtin) || (!fields.lot && !allowProductName)}
+              className="btn btn-primary flex-1"
+              disabled={!canConfirm}
               onClick={() =>
                 onConfirm({
                   ...fields,
                   method,
+                  origin: originOf(rawText),
                   rawText,
                   productName: productName || undefined,
                 })
@@ -282,13 +362,7 @@ export function ScanProduct({ onConfirm, allowProductName }: ScanProductProps) {
             >
               Confirm &amp; verify
             </button>
-            <button
-              className="btn-ghost"
-              onClick={() => {
-                setStage("idle");
-                setError(null);
-              }}
-            >
+            <button className="btn btn-glass" onClick={restart}>
               Restart
             </button>
           </div>
@@ -324,5 +398,40 @@ function Field({
         className="mt-0.5 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm"
       />
     </div>
+  );
+}
+
+/* ── inline stroke icons (match the app's icon language, no emoji) ──────── */
+function CameraIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden>
+      <path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1l1.4-2h6.2L16.5 6h1A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-8Z" />
+      <circle cx="12" cy="12.5" r="3.2" />
+    </svg>
+  );
+}
+function ImageIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden>
+      <rect x="4" y="5" width="16" height="14" rx="2.5" />
+      <circle cx="9" cy="10" r="1.6" />
+      <path d="M4.5 17.5 9 13l3 3 3.5-3.5 4 4" />
+    </svg>
+  );
+}
+function KeyboardIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden>
+      <rect x="3.5" y="7" width="17" height="10.5" rx="2" />
+      <path d="M7 10.5h.01M10.3 10.5h.01M13.6 10.5h.01M16.9 10.5h.01M7.5 14h9" />
+    </svg>
+  );
+}
+function LockIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" className="shrink-0" aria-hidden>
+      <rect x="5.5" y="10.5" width="13" height="9" rx="2" />
+      <path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" />
+    </svg>
   );
 }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import type { EvidenceReceipt } from "@recalllens/schemas";
 import { passportFromDigitalLink } from "@recalllens/gs1";
@@ -12,34 +12,52 @@ import { ScanProduct, type ScanConfirm } from "../components/ScanProduct";
  *
  * Verification order (server-side, shown in the receipt):
  *   1. official FDA advisory identifiers
- *   2. authorized RecallLens recall predicate
+ *   2. authorized RecallLens recall scope
  *   3. proof-verified Sentinel hold
  *   4. no / insufficient evidence
  * The consumer NEVER triggers a supply-chain partner proof.
+ *
+ * State isolation: each verification is bound to the scan attempt that
+ * produced it (attempt counter). A slow response for an older scan is
+ * discarded if a newer scan started, and "Scan another product" clears the
+ * result + receipt entirely.
  */
 export function ConsumerCheck() {
   const [confirmed, setConfirmed] = useState<ScanConfirm | null>(null);
+  const attemptRef = useRef(0);
 
   const verify = useMutation({
-    mutationFn: (f: ScanConfirm) => {
+    mutationFn: async (f: ScanConfirm & { attempt: number }) => {
       // A RecallLens passport, when present in the scanned QR, rides along for
       // signature verification + hold/recall membership.
       const passport = f.rawText ? passportFromDigitalLink(f.rawText) : null;
-      return api.consumer.verify({
-        gtin: f.gtin,
+      const receipt = await api.consumer.verify({
+        gtin: f.gtin || undefined,
         lot: f.lot || undefined,
         expiry: f.expiry || undefined,
         productName: f.productName || undefined,
+        scanOrigin: f.origin,
         passport: passport
           ? { passportId: passport.passportId, issuer: passport.issuer, signature: passport.signature }
           : undefined,
       });
+      return { receipt, attempt: f.attempt };
     },
   });
 
+  // Drop results that belong to an older scan attempt.
+  const current =
+    verify.data && verify.data.attempt === attemptRef.current ? verify.data.receipt : null;
+
+  function startNewScan() {
+    attemptRef.current += 1;
+    verify.reset();
+    setConfirmed(null);
+  }
+
   return (
     <div className="mx-auto flex max-w-xl flex-col gap-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-extrabold tracking-tight">Consumer Check</h1>
           <p className="text-sm text-slate-500">
@@ -51,7 +69,7 @@ export function ConsumerCheck() {
       </div>
       <RoleBanner role="consumer" />
 
-      {!verify.data && !verify.isPending && (
+      {!current && !verify.isPending && (
         <Card className="p-5">
           <SectionTitle hint="all scanning is local to this device">
             Step 1 &amp; 2 — scan, then confirm
@@ -59,8 +77,9 @@ export function ConsumerCheck() {
           <ScanProduct
             allowProductName
             onConfirm={(f) => {
+              attemptRef.current += 1;
               setConfirmed(f);
-              verify.mutate(f);
+              verify.mutate({ ...f, attempt: attemptRef.current });
             }}
           />
         </Card>
@@ -84,23 +103,17 @@ export function ConsumerCheck() {
         <Card className="p-5">
           <Badge tone="outbreak">Verification failed</Badge>
           <p className="mt-2 text-sm text-slate-600">{(verify.error as Error).message}</p>
-          <button className="btn btn-glass mt-3" onClick={() => verify.reset()}>
+          <button className="btn btn-glass mt-3" onClick={startNewScan}>
             Try again
           </button>
         </Card>
       )}
 
-      {verify.data && (
+      {current && (
         <>
-          <ResultCard receipt={verify.data} scanned={confirmed} />
-          <EvidenceReceiptCard receipt={verify.data} />
-          <button
-            className="btn btn-glass"
-            onClick={() => {
-              verify.reset();
-              setConfirmed(null);
-            }}
-          >
+          <ResultCard receipt={current} scanned={confirmed} />
+          <EvidenceReceiptCard receipt={current} />
+          <button className="btn btn-glass" onClick={startNewScan}>
             Scan another product
           </button>
         </>
@@ -109,6 +122,11 @@ export function ConsumerCheck() {
   );
 }
 
+/**
+ * Result styling by level. NO_VERIFIED_MATCH deliberately uses the neutral
+ * info-blue treatment — a no-match is not a safety guarantee and must not
+ * look like a green success state.
+ */
 const LEVEL_STYLE: Record<
   EvidenceReceipt["level"],
   { tone: "outbreak" | "amber" | "verified" | "info" | "neutral"; bg: string }
@@ -117,8 +135,17 @@ const LEVEL_STYLE: Record<
   AUTHORIZED_RECALL_MATCH: { tone: "outbreak", bg: "border-outbreak/40 bg-outbreak-bg" },
   PROOF_VERIFIED_PRECAUTIONARY_HOLD: { tone: "amber", bg: "border-amber-safety/40 bg-amber-bg" },
   POSSIBLE_ADVISORY_MATCH: { tone: "amber", bg: "border-amber-safety/40 bg-amber-bg" },
-  NO_VERIFIED_MATCH: { tone: "verified", bg: "border-verified/40 bg-verified-bg" },
+  NO_VERIFIED_MATCH: { tone: "info", bg: "border-info/40 bg-info-bg" },
   INSUFFICIENT_DATA: { tone: "neutral", bg: "border-slate-300" },
+  VERIFICATION_UNAVAILABLE: { tone: "neutral", bg: "border-slate-300" },
+};
+
+/** Plain-language input provenance for the result card. */
+const PROVENANCE_LABEL: Record<EvidenceReceipt["inputProvenance"], string> = {
+  "signed-synthetic-passport": "Signed RecallLens demonstration passport (synthetic)",
+  "public-identifier-card": "Public identifiers from the scanned label",
+  "manual-entry": "Manually entered identifiers",
+  "invalid-signature": "Passport with an INVALID signature",
 };
 
 function ResultCard({
@@ -134,6 +161,22 @@ function ResultCard({
       <Badge tone={style.tone}>{receipt.headline}</Badge>
       <p className="mt-2 text-sm text-slate-700">{receipt.explanation}</p>
       <p className="mt-2 text-sm font-medium text-slate-800">{receipt.guidance}</p>
+
+      {/* Sources checked — plain language, always visible */}
+      <div className="mt-3 rounded-lg bg-surface-muted px-3 py-2">
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          Sources checked
+        </div>
+        <ul className="mt-1 space-y-0.5 text-xs text-slate-600">
+          {receipt.sourcesChecked.map((c) => (
+            <li key={c.system} className="flex items-baseline justify-between gap-3">
+              <span>{c.system}</span>
+              <span className="text-right font-medium">{c.result}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
       {receipt.source?.url && (
         <a
           className="mt-2 inline-block text-sm font-semibold text-accent underline underline-offset-2"
@@ -147,25 +190,47 @@ function ResultCard({
       <p className="mt-3 text-xs text-slate-500">{receipt.safetyDisclaimer}</p>
       {scanned && (
         <p className="mt-1 text-[11px] text-slate-400">
-          Scanned: <Mono>{scanned.gtin}</Mono>
-          {scanned.lot ? <> · lot <Mono>{scanned.lot}</Mono></> : null}
+          Scanned:{" "}
+          {scanned.gtin ? (
+            <>
+              <Mono>{scanned.gtin}</Mono>
+              {scanned.lot ? <> · lot <Mono>{scanned.lot}</Mono></> : null}
+            </>
+          ) : scanned.lot ? (
+            <>
+              lot <Mono>{scanned.lot}</Mono>
+              <span className="ml-1">(no GTIN printed on this label)</span>
+            </>
+          ) : (
+            <Mono>{scanned.productName ?? "—"}</Mono>
+          )}
         </p>
       )}
     </Card>
   );
 }
 
-/** The full "evidence receipt" — provenance is never hidden in a footer. */
+/**
+ * The full "evidence receipt": a plain-language summary up top, with the raw
+ * technical values (enums, hashes, timestamps) in a collapsed section so the
+ * primary result stays readable in seconds.
+ */
 function EvidenceReceiptCard({ receipt }: { receipt: EvidenceReceipt }) {
   return (
     <Card className="p-5">
       <SectionTitle>Evidence receipt</SectionTitle>
       <dl className="flex flex-col gap-1.5 text-xs">
-        <Row k="Evidence level"><Mono>{receipt.level}</Mono></Row>
-        <Row k="Why this level">{receipt.whyThisLevel}</Row>
+        <Row k="Scanned input">
+          {PROVENANCE_LABEL[receipt.inputProvenance]}
+        </Row>
+        <Row k="Input data">
+          {receipt.inputSynthetic
+            ? "Synthetic demonstration data (RecallLens demo passport)"
+            : "As printed / entered — no RecallLens passport"}
+        </Row>
         {receipt.source && (
           <>
-            <Row k="Authority">
+            <Row k="Primary source">
               {receipt.source.authority}{" "}
               <Badge tone={receipt.source.kind === "official" ? "verified" : receipt.source.kind === "network" ? "info" : "amber"}>
                 {receipt.source.kind}
@@ -175,12 +240,9 @@ function EvidenceReceiptCard({ receipt }: { receipt: EvidenceReceipt }) {
               {receipt.source.live ? "live fetch" : "cached snapshot"}
               {receipt.source.cadenceNote ? ` — ${receipt.source.cadenceNote}` : ""}
             </Row>
-            {receipt.source.sourceTimestamp && (
-              <Row k="Source updated">{receipt.source.sourceTimestamp}</Row>
-            )}
-            <Row k="Retrieved">{receipt.source.retrievedAt}</Row>
           </>
         )}
+        <Row k="Why this result">{receipt.whyThisLevel}</Row>
         {receipt.fieldsMatched.length > 0 && (
           <Row k="Fields matched">
             {receipt.fieldsMatched.map((f) => `${f.field}=${f.value}`).join(" · ")}
@@ -190,19 +252,70 @@ function EvidenceReceiptCard({ receipt }: { receipt: EvidenceReceipt }) {
           <Row k="Fields missing">{receipt.fieldsMissing.join(" · ")}</Row>
         )}
         <Row k="Midnight involved">
-          {receipt.midnightInvolved
-            ? `yes — ${receipt.network ?? "network"}${receipt.txId ? `, tx ${truncateHex(receipt.txId, 8, 6)}` : " (fallback mode: no tx)"}`
-            : "no"}
+          {receipt.midnight.involved ? (
+            <>
+              yes — {receipt.midnight.networkLabel ?? "Midnight"}
+              {receipt.midnight.contractAddress
+                ? " · deployed contract"
+                : ""}
+            </>
+          ) : (
+            <>no{receipt.midnight.note ? ` — ${receipt.midnight.note}` : ""}</>
+          )}
         </Row>
-        <Row k="Synthetic data">{receipt.syntheticData ? "yes — RecallLens demo records" : "no"}</Row>
-        <Row k="Data left device">{receipt.dataLeftDevice}</Row>
+        {receipt.midnight.involved && receipt.midnight.txId && (
+          <Row k="Transaction">
+            <Mono>{truncateHex(receipt.midnight.txId, 10, 8)}</Mono>
+          </Row>
+        )}
+        <Row k="Data left device">
+          {receipt.dataLeftDevice.fieldsTransmitted.length > 0
+            ? receipt.dataLeftDevice.fieldsTransmitted.join(" · ")
+            : "nothing"}
+          {" — image never transmitted"}
+        </Row>
         {receipt.passport && (
           <Row k="Passport">
-            {receipt.passport.valid ? "signature valid" : "SIGNATURE INVALID"} · issuer{" "}
-            <Mono>{receipt.passport.issuer}</Mono>
+            {receipt.passport.valid ? "signature valid" : "SIGNATURE INVALID"} ·
+            synthetic demo credential
           </Row>
         )}
       </dl>
+
+      {/* Raw technical values, collapsed by default */}
+      <details className="mt-3 rounded-lg bg-surface-muted px-3 py-2 text-xs text-slate-500">
+        <summary className="cursor-pointer font-semibold text-slate-600">
+          Technical details
+        </summary>
+        <dl className="mt-2 flex flex-col gap-1.5">
+          <Row k="Evidence level"><Mono>{receipt.level}</Mono></Row>
+          <Row k="Decision basis"><Mono>{receipt.basis}</Mono></Row>
+          {receipt.source?.sourceTimestamp && (
+            <Row k="Source updated"><Mono>{receipt.source.sourceTimestamp}</Mono></Row>
+          )}
+          {receipt.source && <Row k="Retrieved"><Mono>{receipt.source.retrievedAt}</Mono></Row>}
+          {receipt.midnight.contractAddress && (
+            <Row k="Contract"><Mono>{truncateHex(receipt.midnight.contractAddress, 10, 8)}</Mono></Row>
+          )}
+          {receipt.midnight.txId && (
+            <Row k="Tx id"><Mono>{receipt.midnight.txId}</Mono></Row>
+          )}
+          {receipt.midnight.note && <Row k="Midnight note">{receipt.midnight.note}</Row>}
+          {receipt.passport && (
+            <>
+              <Row k="Passport id"><Mono>{receipt.passport.passportId}</Mono></Row>
+              <Row k="Issuer"><Mono>{receipt.passport.issuer}</Mono></Row>
+            </>
+          )}
+          {receipt.sourcesChecked.map((c) => (
+            <Row key={`tech-${c.system}`} k={c.system}>
+              {c.result}
+              {c.live !== null ? (c.live ? " · live" : " · cached/fallback") : ""}
+              {c.detail ? ` · ${c.detail}` : ""}
+            </Row>
+          ))}
+        </dl>
+      </details>
     </Card>
   );
 }

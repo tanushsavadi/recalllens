@@ -100,9 +100,25 @@ export const api = {
     reject: (caseId: string, actingOrgId: string) =>
       postJson("/partner/reject", { caseId, actingOrgId }, z.object({ request: MatchRequest })),
     sendDisclosurePackage: (pkg: unknown) =>
-      postJson("/disclosure/package", pkg, z.object({ stored: z.boolean() }).passthrough()),
+      postJson(
+        "/disclosure/package",
+        pkg,
+        z
+          .object({ stored: z.boolean(), alreadyExisted: z.boolean().optional() })
+          .passthrough(),
+      ),
     confirmRemoval: (orgId: string) =>
-      postJson("/partner/confirm-removal", { orgId }, z.object({ removal: z.object({ confirmedBy: z.array(z.string()), completedAt: z.string().nullable() }) })),
+      postJson(
+        "/partner/confirm-removal",
+        { orgId },
+        z.object({
+          removal: z.object({
+            confirmedBy: z.array(z.string()),
+            completedAt: z.string().nullable(),
+            evidenceBasis: z.string(),
+          }),
+        }),
+      ),
   },
 
   /* role: consumer */
@@ -110,10 +126,11 @@ export const api = {
     check: (receiptId: string, caseId: string) =>
       postJson("/consumer/check", { receiptId, caseId }, ConsumerCheckResponse),
     verify: (input: {
-      gtin: string;
+      gtin?: string;
       lot?: string;
       expiry?: string;
       productName?: string;
+      scanOrigin?: "passport-qr" | "identifier-qr" | "manual";
       passport?: { passportId: string; issuer: string; signature: string };
     }) => postJson("/consumer/verify", input, EvidenceReceipt),
   },
@@ -130,7 +147,45 @@ export const api = {
   },
 
   removal: () =>
-    getJson("/removal", z.object({ removal: z.object({ confirmedBy: z.array(z.string()), completedAt: z.string().nullable() }).nullable() })),
+    getJson(
+      "/removal",
+      z.object({
+        removal: z
+          .object({
+            confirmedBy: z.array(z.string()),
+            completedAt: z.string().nullable(),
+            evidenceBasis: z.string(),
+          })
+          .nullable(),
+      }),
+    ),
+
+  /** One authoritative whole-product lifecycle snapshot. */
+  workflowStage: (caseId: string) =>
+    getJson(
+      `/workflow/${caseId}/stage`,
+      z.object({
+        stage: z.string(),
+        sentinel: z.object({
+          signals: z.number(),
+          required: z.number(),
+          thresholdReached: z.boolean(),
+        }),
+        hold: z.object({ active: z.boolean(), txId: z.string().nullable().optional() }),
+        trace: z.object({
+          matchCount: z.number(),
+          threshold: z.number(),
+          converged: z.boolean(),
+        }),
+        disclosure: z.object({ sent: z.boolean(), authorizationHash: z.string().optional() }),
+        recall: z.object({ authorized: z.boolean(), txId: z.string().nullable().optional() }),
+        removal: z.object({
+          confirmedBy: z.array(z.string()),
+          completedAt: z.string().nullable(),
+        }),
+        mode: z.string(),
+      }),
+    ),
 };
 
 export const DEMO_CASE_ID = FIXTURE_CASE_ID;
