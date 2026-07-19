@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -7,9 +8,12 @@ const CASE_ID =
 const API = "http://127.0.0.1:8787/api";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-/** Printed passport card images (QR payloads are deterministic passports). */
-const IMG_A = path.resolve(__dirname, "../../demo-evidence/after/e2e/03-affected-passport-label.png");
-const IMG_B = path.resolve(__dirname, "../../demo-evidence/after/e2e/04-control-passport-label.png");
+/** Printed passport card images (QR payloads are deterministic passports).
+ * These live in the locally regenerated demo-evidence set (gitignored); the
+ * upload-isolation tests skip with a clear message when it is absent. */
+const IMG_A = path.resolve(__dirname, "../../demo-evidence/workflow/04-passport-a-card.png");
+const IMG_B = path.resolve(__dirname, "../../demo-evidence/workflow/05-passport-b-card.png");
+const labelImagesPresent = fs.existsSync(IMG_A) && fs.existsSync(IMG_B);
 
 test.beforeEach(async ({ request }) => {
   await request.post(`${API}/case/${CASE_ID}/reset`).catch(() => {});
@@ -78,8 +82,8 @@ test.describe("consumer recall intelligence", () => {
     await expect(page.getByText("NO VERIFIED MATCH FOUND")).toBeVisible({ timeout: 15_000 });
     // per-source coverage is listed in plain language
     await expect(page.getByText(/Sources checked/i).first()).toBeVisible();
-    await expect(page.getByText(/RecallLens precautionary hold/i).first()).toBeVisible();
-    await expect(page.getByText(/RecallLens authorized recall scope/i).first()).toBeVisible();
+    await expect(page.getByText(/RecallLens Midnight-anchored hold/i).first()).toBeVisible();
+    await expect(page.getByText(/RecallLens authorized action/i).first()).toBeVisible();
     // manual entry without a passport is honestly non-synthetic input
     await expect(page.getByText(/no RecallLens passport/i)).toBeVisible();
   });
@@ -129,6 +133,7 @@ test.describe("cross-scan state isolation (uploaded label images)", () => {
     page,
   }, testInfo) => {
     test.skip(testInfo.project.name === "mobile", "upload picker flow covered on desktop");
+    test.skip(!labelImagesPresent, "demo-evidence/workflow label images not generated locally");
     await page.goto("/consumer");
     await page.locator('input[type="file"]').first().setInputFiles(IMG_A);
     await expect(page.getByRole("textbox", { name: /Lot \/ batch/i })).toHaveValue(
@@ -161,6 +166,7 @@ test.describe("cross-scan state isolation (uploaded label images)", () => {
     page,
   }, testInfo) => {
     test.skip(testInfo.project.name === "mobile", "upload picker flow covered on desktop");
+    test.skip(!labelImagesPresent, "demo-evidence/workflow label images not generated locally");
     await page.goto("/consumer");
     await page.locator('input[type="file"]').first().setInputFiles(IMG_A);
     await expect(page.getByRole("textbox", { name: /Lot \/ batch/i })).toHaveValue(
