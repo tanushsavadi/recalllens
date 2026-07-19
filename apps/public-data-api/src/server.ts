@@ -227,6 +227,9 @@ app.post("/api/sentinel/authorize-recall", async (c) => {
 
 /* ── REMOVAL VERIFICATION ──────────────────────────────────────────────── */
 
+/* Removal confirmation is a PARTNER-REPORTED off-chain attestation recorded
+ * by this service — the evidenceBasis field states exactly that so the UI
+ * never overclaims. Idempotent per org. */
 app.post("/api/partner/confirm-removal", async (c) => {
   const body = z.object({ orgId: z.string() }).safeParse(await c.req.json());
   if (!body.success) return c.json({ error: body.error.flatten() }, 400);
@@ -234,6 +237,42 @@ app.post("/api/partner/confirm-removal", async (c) => {
 });
 
 app.get("/api/removal", (c) => c.json({ removal: workflow.getRemoval() }));
+
+/* Whole-product lifecycle stage — one authoritative server-side state. */
+app.get("/api/workflow/:caseId/stage", async (c) => {
+  const caseId = c.req.param("caseId");
+  const [stage, sentinel, chain, removal] = await Promise.all([
+    workflow.stage(caseId),
+    workflow.sentinelStatus(caseId),
+    backend.getCaseState(caseId),
+    Promise.resolve(workflow.getRemoval()),
+  ]);
+  const disclosure = workflow.getDisclosure();
+  return c.json({
+    stage,
+    sentinel: {
+      signals: sentinel.counts.signals,
+      required: sentinel.policy.minSignals,
+      thresholdReached: sentinel.thresholdReached,
+    },
+    hold: sentinel.hold ? { active: true, txId: sentinel.hold.txId } : { active: false },
+    trace: {
+      matchCount: chain.matchCount,
+      threshold: chain.convergenceThreshold,
+      converged: chain.converged,
+    },
+    disclosure: disclosure
+      ? { sent: true, authorizationHash: disclosure.authorizationHash }
+      : { sent: false },
+    recall: sentinel.recallAuthorized
+      ? { authorized: true, txId: sentinel.recallAuthorized.txId }
+      : { authorized: false },
+    removal: removal
+      ? { confirmedBy: removal.confirmedBy, completedAt: removal.completedAt }
+      : { confirmedBy: [], completedAt: null },
+    mode: backend.mode,
+  });
+});
 
 app.get("/api/case/:caseId/recall-impact", (c) => {
   const impact = computeRecallImpact(AFFECTED_LINEAGE_TOKEN);
@@ -284,7 +323,7 @@ app.post("/api/consumer/verify", async (c) => {
     tampered: boolean;
   } | null = null;
   let commitment: string | null = null;
-  if (input.passport && input.lot && input.expiry !== undefined) {
+  if (input.passport && input.gtin && input.lot && input.expiry !== undefined) {
     const verified = await verifyPassport({
       gtin: input.gtin,
       lot: input.lot,
@@ -306,8 +345,11 @@ app.post("/api/consumer/verify", async (c) => {
   // 2. Check the hold registry / authorized recall (genuine chain-anchored
   //    where the live backend is active; membership itself is a local set
   //    check against the anchored commitment — documented demo limitation).
-  const hold = commitment ? workflow.holdMembership(commitment) : { member: false, txId: null };
-  const recall = commitment ? workflow.recallMembership(commitment) : { authorized: false, txId: null };
+  //    The hold/recall EXISTENCE is reported even for passport-less scans so
+  //    the receipt's "sources checked" list is truthful about coverage.
+  const st = await workflow.sentinelStatus(DEMO_CASE.caseId);
+  const hold = commitment ? workflow.holdMembership(commitment) : { member: false, txId: st.hold?.txId ?? null };
+  const recall = commitment ? workflow.recallMembership(commitment) : { authorized: false, txId: st.recallAuthorized?.txId ?? null };
 
   // 3. Classify with full provenance.
   const receipt = await classifyScan(
@@ -316,14 +358,18 @@ app.post("/api/consumer/verify", async (c) => {
       lot: input.lot,
       expiry: input.expiry,
       productName: input.productName,
+      scanOrigin: input.scanOrigin,
       passport: passportInfo,
     },
     {
+      holdActive: !!st.hold,
       holdMember: hold.member,
-      holdTxId: hold.txId,
-      recallAuthorized: recall.authorized,
-      recallTxId: recall.txId,
+      holdTxId: st.hold?.txId ?? hold.txId,
+      recallActive: !!st.recallAuthorized,
+      recallMember: recall.authorized,
+      recallTxId: st.recallAuthorized?.txId ?? recall.txId,
       network: backend.info().network,
+      contractAddress: backend.info().contractAddress,
       live: backend.mode === "live-devnet",
     },
   );
@@ -343,10 +389,17 @@ app.get("/api/fda/advisory/:id", async (c) => {
  * investigator fetches and decrypts client-side. Plaintext never transits. */
 
 app.post("/api/disclosure/package", async (c) => {
-  const parsed = DisclosurePackage.safeParse(await c.req.json());
+  const raw = (await c.req.json()) as { replace?: boolean } & Record<string, unknown>;
+  const parsed = DisclosurePackage.safeParse(raw);
   if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400);
-  workflow.setDisclosure(parsed.data);
-  return c.json({ stored: true, authorizationHash: parsed.data.authorizationHash });
+  // Idempotent: a duplicate send for the same case+org returns the existing
+  // package (409-style semantics with a 200 so the client can show it).
+  const res = workflow.setDisclosure(parsed.data, raw.replace === true);
+  return c.json({
+    stored: res.stored,
+    alreadyExisted: res.existing,
+    authorizationHash: res.pkg.authorizationHash,
+  });
 });
 
 app.get("/api/disclosure/package", (c) => {

@@ -34,6 +34,7 @@ import {
   DEMO_CASE,
 } from "@recalllens/demo-fixtures";
 import type { ChainBackend } from "@recalllens/midnight-client";
+import { loadDeployment } from "@recalllens/midnight-client";
 
 /** Orchestration state persists to the repo root so API restarts don't lose
  * the (chain-anchored) hold/signal bookkeeping. Reset via demo:reset. */
@@ -48,7 +49,18 @@ const STATE_FILE = path.resolve(
 const REPLAY_BADGE =
   "Synthetic pre-outbreak replay: what could have happened if RecallLens Sentinel had been deployed before the public advisory.";
 
+/** Exactly what a removal confirmation IS — surfaced verbatim in the UI so
+ * the product never overclaims. It is a service-side attestation, not a
+ * chain transition. */
+export const REMOVAL_EVIDENCE_BASIS =
+  "Partner-reported attestation recorded by the RecallLens service (synthetic demonstration; off-chain — not a Midnight transaction, not cryptographically verified).";
+
 function initialSignals(): SentinelSignal[] {
+  // Pre-submitted signals carry the GENUINE settled txids recorded by the
+  // seed script. If the deployment record predates that field (or fallback
+  // mode has no chain), txId stays null and the UI shows "previously
+  // verified during demo setup" — no fabricated transaction-like text.
+  const seedTx = loadDeployment()?.preSubmittedSignalTxIds ?? {};
   return [
     {
       signalId: "sig-qa-1",
@@ -60,7 +72,7 @@ function initialSignals(): SentinelSignal[] {
       dayOffset: -9,
       summary:
         "Signed environmental test result associated with a private committed lineage (raw result stays private).",
-      txId: "(pre-submitted)",
+      txId: seedTx["org-northstar"] ?? null,
       nullifier: null,
       preSubmitted: true,
     },
@@ -74,7 +86,7 @@ function initialSignals(): SentinelSignal[] {
       dayOffset: -7,
       summary:
         "Temperature-excursion record signed by a credentialed distributor, bound to the same private lineage.",
-      txId: "(pre-submitted)",
+      txId: seedTx["org-meridian"] ?? null,
       nullifier: null,
       preSubmitted: true,
     },
@@ -257,9 +269,26 @@ export class WorkflowEngine {
     return { member: this.hold.members.has(commitment), txId: this.hold.txId };
   }
 
+  /**
+   * INVESTIGATOR action: authorize the targeted recall. Prerequisites are
+   * enforced server-side — an issued hold, trace convergence (3/3 distinct
+   * orgs on-chain), and a received disclosure package. Idempotent: a second
+   * call fails loudly rather than double-anchoring.
+   */
   async authorizeRecall(caseId: string): Promise<NonNullable<SentinelStatus["recallAuthorized"]>> {
     if (!this.hold) throw new Error("no hold to convert");
     if (this.recallAuth) throw new Error("recall already authorized");
+    const chain = await this.backend.getCaseState(caseId);
+    if (!chain.converged) {
+      throw new Error(
+        "recall authorization requires trace convergence (3/3 verified organizations) first",
+      );
+    }
+    if (!this.disclosure) {
+      throw new Error(
+        "recall authorization requires the partner's encrypted disclosure to be received first",
+      );
+    }
     const digest = await crypto.subtle.digest(
       "SHA-256",
       new TextEncoder().encode(`rl-recall-predicate:v1|${this.hold.holdCommitment}`) as unknown as ArrayBuffer,
@@ -408,15 +437,40 @@ export class WorkflowEngine {
 
   /* ---- disclosure + removal ---- */
 
-  setDisclosure(pkg: DisclosurePackage) {
+  /**
+   * Store the partner's encrypted disclosure package. IDEMPOTENT: once a
+   * package exists for this case+org, subsequent identical sends return the
+   * stored package rather than overwriting. A deliberate replacement (a new
+   * disclosure authorization) must pass `replace: true`.
+   */
+  setDisclosure(pkg: DisclosurePackage, replace = false): { stored: boolean; existing: boolean; pkg: DisclosurePackage } {
+    if (
+      this.disclosure &&
+      !replace &&
+      this.disclosure.caseId === pkg.caseId &&
+      this.disclosure.orgId === pkg.orgId
+    ) {
+      return { stored: false, existing: true, pkg: this.disclosure };
+    }
     this.disclosure = pkg;
     this.save();
+    return { stored: true, existing: false, pkg };
   }
   getDisclosure(): DisclosurePackage | null {
     return this.disclosure;
   }
 
-  confirmRemoval(orgId: string): { confirmedBy: string[]; completedAt: string | null } {
+  /**
+   * Removal confirmation — a PARTNER-REPORTED attestation recorded by the
+   * RecallLens service (in-memory + JSON file). It is NOT a Midnight
+   * transaction and NOT cryptographically verified; the response says so.
+   * Idempotent: re-confirming the same org is a no-op.
+   */
+  confirmRemoval(orgId: string): {
+    confirmedBy: string[];
+    completedAt: string | null;
+    evidenceBasis: string;
+  } {
     if (!this.removal) this.removal = { confirmedBy: [], completedAt: null };
     if (!this.removal.confirmedBy.includes(orgId)) this.removal.confirmedBy.push(orgId);
     const partners = organizations.filter((o) => affectedEvents[o.orgId]).map((o) => o.orgId);
@@ -424,10 +478,12 @@ export class WorkflowEngine {
       this.removal.completedAt = new Date().toISOString();
     }
     this.save();
-    return this.removal;
+    return { ...this.removal, evidenceBasis: REMOVAL_EVIDENCE_BASIS };
   }
   getRemoval() {
-    return this.removal;
+    return this.removal
+      ? { ...this.removal, evidenceBasis: REMOVAL_EVIDENCE_BASIS }
+      : null;
   }
 
   /* ---- whole-product stage ---- */
@@ -439,10 +495,13 @@ export class WorkflowEngine {
     if (this.recallAuth) return "recall-authorized";
     if (this.disclosure) return "disclosure-complete";
     if (chain.converged) return "trace-verified";
-    const reqs = await this.matchRequests(caseId);
-    if (reqs.some((r) => r.status !== "none" && r.status !== "proven") || chain.matchCount > 0)
-      if (this.hold) return "trace-requested";
-    if (this.hold) return "hold-issued";
+    if (this.hold) {
+      const reqs = await this.matchRequests(caseId);
+      const traceActive = reqs.some(
+        (r) => r.status !== "none" && r.status !== "proven" && r.status !== "rejected",
+      );
+      return traceActive ? "trace-requested" : "hold-issued";
+    }
     if (st.thresholdReached) return "sentinel-threshold";
     return "sentinel-signals";
   }
