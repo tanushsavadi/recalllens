@@ -24,8 +24,8 @@ shown).
 | Level | Headline | Trigger |
 |---|---|---|
 | EXACT_OFFICIAL_RECALL_MATCH | EXACT OFFICIAL RECALL MATCH | exact lot + ≥1 corroborating identifier (brand/product or best-by) match the official FDA advisory |
-| PROOF_VERIFIED_PRECAUTIONARY_HOLD | PROOF-VERIFIED PRECAUTIONARY HOLD | valid passport signature + commitment ∈ active hold (chain-anchored). Copy: "not yet an official government recall" |
-| AUTHORIZED_RECALL_MATCH | AFFECTED PRODUCT CONFIRMED | investigator converted the hold into an authorized RecallLens demonstration recall; passport intersects the predicate. Copy: "not an FDA recall" |
+| PROOF_VERIFIED_PRECAUTIONARY_HOLD | SIGNED PASSPORT MATCHES A MIDNIGHT-ANCHORED HOLD | valid passport signature + commitment ∈ active hold (commitment chain-anchored; membership resolution is service-side in this MVP). Copy: "not an official government recall… does not prove that the product is contaminated" |
+| AUTHORIZED_RECALL_MATCH | MATCHES TARGETED RECALL SCOPE | investigator authorized the targeted RecallLens action after convergence + disclosure; passport intersects the scope. Copy: "not an FDA recall… does not independently prove contamination" |
 | POSSIBLE_ADVISORY_MATCH | POSSIBLE MATCH—VERIFY LOT | brand/category matches, lot/date unconfirmed |
 | NO_VERIFIED_MATCH | NO VERIFIED MATCH FOUND | nothing matched. Mandatory copy: "This is not a guarantee that the product is safe." |
 | INSUFFICIENT_DATA | INSUFFICIENT DATA / PASSPORT SIGNATURE INVALID | no usable identifiers, or tampered passport |

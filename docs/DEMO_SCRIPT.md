@@ -61,10 +61,12 @@ progress (generate → prove → submit → confirm, ~60–90s) → genuine
 "Hold active · Trace 2/3".
 
 **Warn early.** Scan Passport A as a consumer →
-**PROOF-VERIFIED PRECAUTIONARY HOLD** — "not yet an official government
-recall" — the receipt separates input provenance (synthetic signed passport),
-per-source results, and Midnight involvement ("Local Midnight devnet ·
-deployed contract" + the anchor tx).
+**SIGNED PASSPORT MATCHES A MIDNIGHT-ANCHORED HOLD** — "not an official
+government recall… does not prove that the product is contaminated" — the
+receipt separates input provenance (synthetic signed passport), per-source
+results, and Midnight involvement ("Local Midnight devnet · deployed
+contract" + the anchor tx), and states plainly that membership resolution is
+service-side in this MVP while the hold commitment is on-chain.
 
 **Trace.** Investigation → Send private-match request (note: the investigator
 has no proof button — it *cannot* run Meridian's proof). Switch to Vault →
@@ -74,10 +76,11 @@ committed record located → **Approve and generate private proof** → genuine
 LINEAGE VERIFIED** — "narrows the investigation but does not independently
 establish contamination or causation." Pill: "Shared lineage verified 3/3".
 
-**Disclose minimally.** In Meridian's vault: approve sourceGln + lotCode +
-eventDate, reject destinationGln → "Encrypt approved fields" (in-browser
-ECDH+AES-GCM; only ciphertext transits; the send is idempotent — a reload can
-never re-send) → Investigation: decrypt → **RELEVANT SHIPMENT IDENTIFIED**.
+**Disclose minimally.** In Meridian's vault: approve Origin facility +
+Shipment lot + Shipment date, leave Destination facility withheld →
+"Encrypt approved fields" (in-browser ECDH+AES-GCM; only ciphertext transits;
+the send is idempotent — a reload can never re-send) → Investigation:
+decrypt → **RELEVANT SHIPMENT IDENTIFIED** with the human-readable labels.
 
 **Act.** "Review recall predicate…" shows the exact scope, hold commitment,
 effect, and authority (RecallLens action — NOT an FDA recall) → confirm →
@@ -85,9 +88,9 @@ genuine `authorizeRecallPredicate` settles → **AUTHORIZED RECALLLENS
 DEMONSTRATION RECALL**. Authorization is server-gated: impossible before
 trace convergence AND a received disclosure, and it cannot run twice.
 
-**Protect + report removal.** Re-scan Passport A → **MATCHES AUTHORIZED
+**Protect + report removal.** Re-scan Passport A → **MATCHES TARGETED
 RECALL SCOPE** ("does not independently prove that the individual product is
-contaminated") with the genuine tx in the receipt. Partners report
+contaminated… not an FDA recall") with the genuine tx in the receipt. Partners report
 quarantine/removal in their vaults — shown as a **partner-reported, off-chain
 attestation**, never called cryptographically verified.
 

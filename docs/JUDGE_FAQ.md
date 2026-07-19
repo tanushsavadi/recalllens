@@ -62,11 +62,19 @@ unchanged.
 
 **What is the difference between an official recall and a RecallLens action?**
 An EXACT OFFICIAL RECALL MATCH comes purely from the FDA advisory (real public
-identifiers; "Midnight involved: no"). A RecallLens authorized recall is a
+identifiers; "Midnight involved: no"). A RecallLens targeted action is a
 NETWORK action an investigator explicitly authorized after trace convergence
 and partner disclosure — the UI always says "not an FDA recall," and a
-matching passport shows "MATCHES AUTHORIZED RECALL SCOPE… does not
+matching passport shows "MATCHES TARGETED RECALL SCOPE… does not
 independently prove that the individual product is contaminated."
+
+**What does the consumer hold result actually verify?**
+The headline is "SIGNED PASSPORT MATCHES A MIDNIGHT-ANCHORED HOLD" — chosen
+precisely: the passport SIGNATURE is verified, the hold COMMITMENT is
+anchored on the local Midnight devnet, and RecallLens resolves the passport's
+membership against that anchored commitment. Membership resolution is
+service-side in this MVP (a production build would use a membership proof or
+private set intersection); the receipt states this rather than burying it.
 
 **Why does the FDA test card have no GTIN?**
 Because the FDA advisory does not publish one. RecallLens never fabricates a
