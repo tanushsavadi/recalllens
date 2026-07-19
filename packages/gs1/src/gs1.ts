@@ -15,6 +15,9 @@
  */
 
 export interface Gs1Data {
+  /** GTIN (AI 01). Empty string when the label genuinely carries no GTIN —
+   * e.g. the FDA advisory test card, whose official source publishes no
+   * GTIN/UPC. A missing GTIN is never synthesized. */
   gtin: string;
   lot?: string;
   /** ISO date "YYYY-MM-DD" */
@@ -47,10 +50,16 @@ export function isoToYymmdd(iso: string): string {
 }
 
 function finalize(d: Partial<Gs1Data>): Gs1Data {
-  if (!d.gtin || !gtinValid(d.gtin)) {
-    throw new Error(`GS1: missing or invalid GTIN (AI 01): ${d.gtin ?? "—"}`);
+  // A GTIN, when present, must be valid — but a label may legitimately carry
+  // only a lot (+ optional date), e.g. official advisories that publish no
+  // GTIN/UPC. At least one identifier is required.
+  if (d.gtin && !gtinValid(d.gtin)) {
+    throw new Error(`GS1: invalid GTIN (AI 01): ${d.gtin}`);
   }
-  return { gtin: d.gtin, lot: d.lot, expiry: d.expiry };
+  if (!d.gtin && !d.lot) {
+    throw new Error("GS1: no usable identifier (need AI 01 GTIN or AI 10 lot)");
+  }
+  return { gtin: d.gtin ?? "", lot: d.lot, expiry: d.expiry };
 }
 
 /** Parse a bracketed OR raw (FNC1) element string. */
