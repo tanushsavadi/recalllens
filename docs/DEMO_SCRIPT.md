@@ -2,6 +2,9 @@
 
 **Tagline:** "Find the source, not the secrets."
 
+**Recorded demo video (2 min):** https://youtu.be/56mWNj5ZfLg — follows this
+script. Use the steps below to run the same demo live.
+
 **Presenter disclosure (say this up front):**
 "The government source data is real. The physical scans, Compact proofs,
 Midnight transactions and encrypted workflow are genuine. The participating

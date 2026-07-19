@@ -44,7 +44,13 @@ Added `POST /api/case/:caseId/reset`. On the fallback backend it clears in-memor
 ## D13 — Signature 3D globe via react-globe.gl, with guaranteed 2D fallback (2026-07-18)
 Chosen via Context7: `react-globe.gl` (three.js/WebGL, high reputation) for the Command Center's signature Outbreak Globe. It frames the US, highlights the 5 affected states at STATE granularity only (no fabricated case coordinates), draws coarse anonymous proof arcs toward the convergence region, and its camera focuses on convergence driven by REAL on-chain state (not a frontend flag). Guaranteed fallbacks: the existing 2D states cartogram is shown for mobile (<768px), reduced-motion users, and on WebGL/globe load failure. The globe is lazy-loaded (React.lazy + Suspense) so it never blocks first render. A "replay convergence" control replays existing verified state without generating a new proof.
 
-## D14 — Physical scan-to-Midnight pipeline; scan drives the live 3rd proof (2026-07-18)
+## D14 — Physical scan-to-Midnight pipeline; scan drives the live 3rd proof (2026-07-18) — superseded in part
+
+> **Superseded note:** the role-separation rework later removed the
+> consumer-scan-triggers-partner-proof behavior described below. Today the
+> consumer scan is read-only; the partner scans its own shipment label in its
+> own vault and approves its own proof (see PRODUCT_WORKFLOW.md). The local
+> scanning pipeline itself is unchanged.
 Consumer scans a printable GS1 Digital Link label (GTIN+lot+expiry only — no secrets) via native BarcodeDetector → ZXing fallback → image upload; OCR (Tesseract) for printed lot/date with manual correction. All processing is local; raw imagery never leaves the device. The confirmed GTIN+lot are LOOKUP KEYS into the private vault, which holds the high-entropy lineage token + EPCIS event (never on the label, never on-chain). The affected label triggers the genuine third `proveRelevantEvent` and the globe/graph update from verified indexer state. Truthful result: "Affected purchase detected" only for the synthetic demo lineage; a real retail bag → "No verified intersection found in the information currently available" + "not proof that the product is safe." Labeled: private records synthetic, Compact proof + state transition genuine.
 
 ## D12 — Registrar authority gate to make "3 independent orgs" honest (2026-07-18)

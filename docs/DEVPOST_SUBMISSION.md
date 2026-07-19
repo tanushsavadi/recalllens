@@ -1,5 +1,8 @@
 # RecallLens — Devpost Submission
 
+## Demo video
+https://youtu.be/56mWNj5ZfLg
+
 ## Tagline
 Find the source, not the secrets. Privacy-preserving food-safety network on
 Midnight: detect early, verify privately, contain quickly, trace precisely,
