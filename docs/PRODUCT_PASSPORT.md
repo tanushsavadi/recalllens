@@ -40,8 +40,8 @@ credential.
 
 Because passportId is 128-bit random, the commitment cannot be brute-forced
 from a predictable lot alone. The Sentinel hold anchors a set commitment over
-these values; scanning checks membership (see SENTINEL_ARCHITECTURE.md for the
-demo resolver limitation).
+these values; scanning checks membership (see ARCHITECTURE.md → "Hold
+membership" for the demo resolver limitation).
 
 ## Verify-on-scan sequence
 
