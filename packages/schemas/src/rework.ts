@@ -52,6 +52,7 @@ export const EvidenceLevel = z.enum([
   "POSSIBLE_ADVISORY_MATCH",
   "NO_VERIFIED_MATCH",
   "INSUFFICIENT_DATA",
+  "VERIFICATION_UNAVAILABLE",
 ]);
 export type EvidenceLevel = z.infer<typeof EvidenceLevel>;
 
@@ -66,6 +67,61 @@ export const EvidenceSource = z.object({
 });
 export type EvidenceSource = z.infer<typeof EvidenceSource>;
 
+/** What kind of physical input produced this scan. */
+export const InputProvenance = z.enum([
+  // a signed RecallLens demonstration passport (synthetic by definition)
+  "signed-synthetic-passport",
+  // a card carrying only public identifiers (e.g. the FDA advisory test card)
+  "public-identifier-card",
+  // the user typed the identifiers
+  "manual-entry",
+  // a passport whose signature failed verification
+  "invalid-signature",
+]);
+export type InputProvenance = z.infer<typeof InputProvenance>;
+
+/** One evidence system that was consulted for this scan, with its own result. */
+export const SourceCheck = z.object({
+  /** e.g. "FDA outbreak advisory", "RecallLens precautionary hold",
+   * "RecallLens authorized recall scope", "Passport signature" */
+  system: z.string(),
+  kind: z.enum(["official", "network", "device"]),
+  /** plain-language outcome for THIS system, e.g. "no match", "match",
+   * "valid", "invalid", "none active", "not checked — no signed passport" */
+  result: z.string(),
+  /** live fetch / live state vs cached; null when not meaningful (device) */
+  live: z.boolean().nullable(),
+  detail: z.string().nullable(),
+});
+export type SourceCheck = z.infer<typeof SourceCheck>;
+
+/** Machine-readable decision basis for the receipt's level. */
+export const DecisionBasis = z.enum([
+  "official-exact-identifiers",
+  "official-possible-brand",
+  "authorized-recall-scope-membership",
+  "active-hold-membership",
+  "no-match-across-checked-sources",
+  "invalid-passport-signature",
+  "insufficient-identifiers",
+  "sources-unavailable",
+]);
+export type DecisionBasis = z.infer<typeof DecisionBasis>;
+
+/** Midnight involvement, stated precisely. */
+export const MidnightInvolvement = z.object({
+  /** true ONLY when a Midnight-anchored fact was used for this result */
+  involved: z.boolean(),
+  mode: z.enum(["live-devnet", "deterministic-fallback"]).nullable(),
+  /** human label, e.g. "Local Midnight devnet" — never the raw network id */
+  networkLabel: z.string().nullable(),
+  contractAddress: z.string().nullable(),
+  txId: z.string().nullable(),
+  /** e.g. "no Midnight-anchored hold or recall was active to check" */
+  note: z.string().nullable(),
+});
+export type MidnightInvolvement = z.infer<typeof MidnightInvolvement>;
+
 /** The "evidence receipt" shown with every consumer result. */
 export const EvidenceReceipt = z.object({
   level: EvidenceLevel,
@@ -73,16 +129,31 @@ export const EvidenceReceipt = z.object({
   explanation: z.string(),
   guidance: z.string(),
   safetyDisclaimer: z.string(),
+  /* 1. input provenance */
+  inputProvenance: InputProvenance,
+  /** the scanned INPUT is synthetic demonstration data (independent of
+   * whether the sources checked are official) */
+  inputSynthetic: z.boolean(),
+  /* 2. every system checked, each with its own result */
+  sourcesChecked: z.array(SourceCheck),
+  /* 3. decision basis */
+  basis: DecisionBasis,
+  whyThisLevel: z.string(),
+  /** primary source backing the level (e.g. the FDA advisory for an official
+   * match); null when no single source decided the result */
   source: EvidenceSource.nullable(),
   fieldsMatched: z.array(z.object({ field: z.string(), value: z.string() })),
   fieldsMissing: z.array(z.string()),
-  whyThisLevel: z.string(),
-  /** Midnight involvement — only true when a real chain read/proof occurred */
-  midnightInvolved: z.boolean(),
-  txId: z.string().nullable(),
-  network: z.string().nullable(),
-  syntheticData: z.boolean(),
-  dataLeftDevice: z.string(), // human sentence: what left the browser
+  /* 4. Midnight involvement */
+  midnight: MidnightInvolvement,
+  /* 5. simulated-impact note (never claimed measured) */
+  impactSimulated: z.boolean(),
+  /* 6. data leaving the device — exact, no broader claim */
+  dataLeftDevice: z.object({
+    fieldsTransmitted: z.array(z.string()),
+    imageTransmitted: z.literal(false),
+    note: z.string(),
+  }),
   passport: z
     .object({
       valid: z.boolean(),
@@ -95,10 +166,14 @@ export const EvidenceReceipt = z.object({
 export type EvidenceReceipt = z.infer<typeof EvidenceReceipt>;
 
 export const ConsumerVerifyRequest = z.object({
-  gtin: z.string().regex(/^\d{8,14}$/),
+  /** GTIN is OPTIONAL: official advisories may publish no GTIN/UPC and we
+   * never fabricate one. At least one identifier must be present. */
+  gtin: z.string().regex(/^\d{8,14}$/).optional(),
   lot: z.string().optional(),
   expiry: z.string().optional(),
   productName: z.string().optional(),
+  /** how the identifiers were obtained (drives input-provenance reporting) */
+  scanOrigin: z.enum(["passport-qr", "identifier-qr", "manual"]).optional(),
   /** signed passport fields when a RecallLens passport QR was scanned */
   passport: z
     .object({
