@@ -68,31 +68,58 @@ export function CommandCenter() {
         </div>
       </div>
 
-      {/* STAT RAIL — floating glass, bottom-right on desktop */}
-      <div className="fixed bottom-4 right-3 z-10 hidden lg:block">
-        <div className="glass pointer-events-auto flex items-stretch divide-x divide-[color:var(--line)] p-1">
-          <RailStat label="Cases" value={o ? `${o.cases.toLocaleString()}+` : "…"} tone="outbreak" />
-          <RailStat label="Hosp." value={`${o?.hospitalizations ?? "…"}`} tone="amber" />
-          <RailStat label="Deaths" value={`${o?.deaths ?? "…"}`} />
-          <RailStat label="States" value={`${o?.states.length ?? "…"}`} />
-          <RailStat
-            label="Verified"
-            value={`${chain?.matchCount ?? 0}/${chain?.convergenceThreshold ?? 3}`}
-            tone={converged ? "verified" : "default"}
-          />
+      {/* STAT RAILS — official public-health facts and private coordination
+          status are SEPARATE datasets and are never fused into one row. */}
+      <div className="fixed bottom-4 right-3 z-10 hidden flex-col items-end gap-2 lg:flex">
+        <div className="glass pointer-events-auto p-1">
+          <div className="eyebrow px-3 pt-1.5">Official public-health snapshot · CDC</div>
+          <div className="flex items-stretch divide-x divide-[color:var(--line)]">
+            <RailStat label="Illnesses" value={o ? `${o.cases.toLocaleString()}+` : "…"} tone="outbreak" />
+            <RailStat label="Hosp." value={`${o?.hospitalizations ?? "…"}`} tone="amber" />
+            <RailStat label="Deaths" value={`${o?.deaths ?? "…"}`} />
+            <RailStat label="States" value={`${o?.states.length ?? "…"}`} />
+          </div>
+        </div>
+        <div className="glass pointer-events-auto p-1">
+          <div className="eyebrow px-3 pt-1.5">Private coordination · Midnight (synthetic partners)</div>
+          <div className="flex items-stretch divide-x divide-[color:var(--line)]">
+            <RailStat
+              label="Trace orgs"
+              value={`${chain?.matchCount ?? 0}/${chain?.convergenceThreshold ?? 3}`}
+              tone={converged ? "verified" : "default"}
+            />
+            <RailStat
+              label="Network"
+              value={caseStatus.data?.mode === "live-devnet" ? "LIVE" : "FALLBACK"}
+              tone={caseStatus.data?.mode === "live-devnet" ? "verified" : "amber"}
+            />
+          </div>
         </div>
       </div>
 
-      {/* MISSION EYEBROW — top-left under the nav (desktop) */}
+      {/* MISSION EYEBROW + GLOBE LEGEND — top-left under the nav (desktop) */}
       <div className="fixed left-4 top-24 z-10 hidden md:block">
         <div className="pointer-events-auto">
           <Badge tone={caseStatus.data?.mode === "live-devnet" ? "verified" : "amber"}>
             {caseStatus.data?.mode === "live-devnet" ? "Live Midnight devnet" : "Deterministic fallback"}
           </Badge>
         </div>
-        <div className="mt-2 max-w-[190px] text-[11px] leading-snug text-lo">
-          Affected states shown at state granularity. Green arcs are anonymous
-          proof activity — no facility coordinates or routes.
+        <div className="glass pointer-events-auto mt-2 max-w-[210px] p-3">
+          <div className="eyebrow mb-1.5">Globe legend</div>
+          <ul className="space-y-1 text-[11px] leading-snug text-lo">
+            <li className="flex items-center gap-1.5">
+              <span className="inline-block h-2 w-2 rounded-full" style={{ background: "var(--outbreak)" }} />
+              Affected state (CDC, state centroid only)
+            </li>
+            <li className="flex items-center gap-1.5">
+              <span className="inline-block h-0.5 w-4 rounded" style={{ background: "var(--verified)" }} />
+              Schematic anonymous proof activity
+            </li>
+          </ul>
+          <p className="mt-1.5 text-[10px] leading-snug text-lo">
+            Not facilities or shipment routes — arcs are drawn from fixed
+            schematic origins, not real geography.
+          </p>
         </div>
       </div>
     </div>

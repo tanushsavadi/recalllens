@@ -142,6 +142,11 @@ export default function BackgroundGlobe({
       arcDashGap={0.22}
       arcDashAnimateTime={1500}
       arcAltitude={0.3}
+      arcLabel={() =>
+        `<div style="font:600 11px Geist,sans-serif;color:#0d1220;background:#fff;padding:5px 8px;border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,.25);max-width:220px">
+          Schematic anonymous proof activity — not a facility or shipment route
+        </div>`
+      }
     />
   );
 }

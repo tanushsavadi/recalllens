@@ -32,18 +32,20 @@ export function RecallImpact() {
     { name: "RecallLens targeted", value: d.targeted.cases, kind: "targeted" },
   ];
 
+  // "Cases" here are SHIPPING CASES (inventory units) — labeled explicitly so
+  // they can never be confused with human illness cases.
   return (
     <Card className="p-5">
-      <SectionTitle hint={d.label}>Recall blast radius</SectionTitle>
+      <SectionTitle hint={d.label}>Recall blast radius — inventory</SectionTitle>
       <div className="grid gap-4 sm:grid-cols-3">
         <Stat
-          label="Broad recall (cases)"
+          label="Broad recall — shipping cases"
           value={d.broad.cases.toLocaleString()}
           tone="outbreak"
           sub={`${d.broad.stores} stores · ${d.broad.states.length} states`}
         />
         <Stat
-          label="Targeted (cases)"
+          label="Targeted — shipping cases"
           value={d.targeted.cases.toLocaleString()}
           tone="verified"
           sub={`${d.targeted.stores} stores · ${d.targeted.states.length} states`}
@@ -65,7 +67,7 @@ export function RecallImpact() {
               tick={{ fontSize: 11 }}
             />
             <Tooltip
-              formatter={(v: number) => [`${v.toLocaleString()} cases`, "Scope"]}
+              formatter={(v: number) => [`${v.toLocaleString()} shipping cases`, "Inventory scope"]}
             />
             <Bar dataKey="value" radius={[0, 4, 4, 0]}>
               {chartData.map((entry) => (
@@ -79,8 +81,9 @@ export function RecallImpact() {
         </ResponsiveContainer>
       </div>
       <p className="mt-1 text-xs text-slate-500">
-        <Badge tone="amber">Simulated</Badge> Derived from demonstration supply
-        records. RecallLens did not produce these savings in the actual CDC
+        <Badge tone="amber">Simulated</Badge> Shipping-case counts derived from
+        demonstration supply records — inventory units, not human illnesses.
+        RecallLens did not produce these savings in the actual CDC
         investigation.
       </p>
     </Card>

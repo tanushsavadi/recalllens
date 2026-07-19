@@ -51,23 +51,26 @@ export function GlobeStage() {
   }, []);
 
   const show3D = use3D && !failed;
-  // The globe canvas is a large square sized to the viewport; the sphere fills
-  // ~78% of it. Bigger of the two so it always feels massive & centered.
-  const dim = Math.round(Math.min(vp.w, vp.h) * 1.35);
+  // The globe canvas must COVER the whole viewport in both dimensions (plus a
+  // small bleed) so a zoomed earth is never clipped to a visible square box on
+  // wide or tall screens — the WebGL clip edge always lies past the viewport
+  // edge. The sphere's apparent size is set by the camera, not the canvas.
+  const cw = Math.round(vp.w * 1.12);
+  const ch = Math.round(vp.h * 1.12);
 
   return (
-    <div className="fixed inset-0 z-0 flex items-center justify-center overflow-hidden">
+    <div className="globe-stage fixed inset-0 z-0 flex items-center justify-center overflow-hidden">
       {show3D ? (
         <Boundary onError={() => setFailed(true)}>
           <Suspense fallback={null}>
-            <div style={{ width: dim, height: dim }} className="relative">
+            <div style={{ width: cw, height: ch }} className="relative">
               <BackgroundGlobe
                 affectedStates={affectedStates}
                 confirmedCount={confirmedCount}
                 converged={converged}
                 replayNonce={replayNonce}
-                width={dim}
-                height={dim}
+                width={cw}
+                height={ch}
                 autoRotate={vp.w >= 640}
               />
             </div>
