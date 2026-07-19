@@ -125,8 +125,8 @@ describe("Recall Intelligence classifier", () => {
     // every consulted system is recorded with its own result
     const systems = r.sourcesChecked.map((c) => c.system);
     expect(systems).toContain("FDA outbreak advisory");
-    expect(systems).toContain("RecallLens precautionary hold");
-    expect(systems).toContain("RecallLens authorized recall scope");
+    expect(systems).toContain("RecallLens Midnight-anchored hold");
+    expect(systems).toContain("RecallLens authorized action");
     // with no hold/recall active, Midnight is honestly uninvolved with a note
     expect(r.midnight.involved).toBe(false);
     expect(r.midnight.note).toMatch(/No Midnight-anchored hold or authorized recall/);
@@ -149,7 +149,7 @@ describe("Recall Intelligence classifier", () => {
     // the input is a synthetic signed passport even though it did not match
     expect(r.inputProvenance).toBe("signed-synthetic-passport");
     expect(r.inputSynthetic).toBe(true);
-    const holdCheck = r.sourcesChecked.find((c) => c.system === "RecallLens precautionary hold");
+    const holdCheck = r.sourcesChecked.find((c) => c.system === "RecallLens Midnight-anchored hold");
     expect(holdCheck?.result).toBe("no match");
   });
 
@@ -169,7 +169,7 @@ describe("Recall Intelligence classifier", () => {
     expect(r.basis).toBe("sources-unavailable");
   });
 
-  it("PROOF_VERIFIED_PRECAUTIONARY_HOLD: valid passport in an active hold", async () => {
+  it("hold match: precise Midnight-anchored headline + service-side membership disclosure", async () => {
     const r = await classifyScan(
       {
         gtin: "00810099110042",
@@ -180,7 +180,11 @@ describe("Recall Intelligence classifier", () => {
       { fetchAdvisory: cachedAdvisory },
     );
     expect(r.level).toBe("PROOF_VERIFIED_PRECAUTIONARY_HOLD");
-    expect(r.explanation).toContain("not yet an official government recall");
+    expect(r.headline).toBe("SIGNED PASSPORT MATCHES A MIDNIGHT-ANCHORED HOLD");
+    expect(r.explanation).toContain("not an official government recall");
+    expect(r.explanation).toContain("does not prove that the product is contaminated");
+    // the MVP's service-side membership resolution is stated, not buried
+    expect(r.whyThisLevel).toContain("membership resolution is service-side in this MVP");
     expect(r.midnight.involved).toBe(true);
     expect(r.midnight.networkLabel).toBe("Local Midnight devnet");
     // the raw network id "undeployed" never appears in the human label
@@ -204,7 +208,7 @@ describe("Recall Intelligence classifier", () => {
       { fetchAdvisory: cachedAdvisory },
     );
     expect(r.level).toBe("AUTHORIZED_RECALL_MATCH");
-    expect(r.headline).toBe("MATCHES AUTHORIZED RECALL SCOPE");
+    expect(r.headline).toBe("MATCHES TARGETED RECALL SCOPE");
     expect(r.explanation).toContain("not an FDA recall");
     expect(r.explanation).toContain("does not independently prove");
   });

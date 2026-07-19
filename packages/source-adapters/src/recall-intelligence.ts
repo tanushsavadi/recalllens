@@ -229,10 +229,13 @@ export async function classifyScan(
   }
 
   /* RecallLens hold / recall-scope checks. Membership requires a valid signed
-   * passport; without one the systems are still reported — as not applicable. */
+   * passport; without one the systems are still reported — as not applicable.
+   * The system names say precisely what each check is: the hold COMMITMENT is
+   * Midnight-anchored; the action is a targeted RecallLens action (never an
+   * FDA recall). */
   const passportValid = !!input.passport?.valid;
   checks.push({
-    system: "RecallLens precautionary hold",
+    system: "RecallLens Midnight-anchored hold",
     kind: "network",
     result: !network.holdActive
       ? "none active"
@@ -245,7 +248,7 @@ export async function classifyScan(
     detail: network.holdActive && network.holdTxId ? `anchor tx ${network.holdTxId}` : null,
   });
   checks.push({
-    system: "RecallLens authorized recall scope",
+    system: "RecallLens authorized action",
     kind: "network",
     result: !network.recallActive
       ? "none authorized"
@@ -343,7 +346,7 @@ export async function classifyScan(
         { field: "product passport", value: input.passport!.passportId.slice(0, 12) + "…" },
         ...(input.lot ? [{ field: "lot", value: input.lot }] : []),
       ],
-      headline: "MATCHES AUTHORIZED RECALL SCOPE",
+      headline: "MATCHES TARGETED RECALL SCOPE",
       explanation:
         "This signed product passport matches the privately verified recall criteria authorized through RecallLens. This does not independently prove that the individual product is contaminated, and it is a RecallLens network action — not an FDA recall.",
       guidance:
@@ -355,7 +358,10 @@ export async function classifyScan(
     });
   }
 
-  /* ── 3. Proof-verified precautionary hold ───────────────────────────── */
+  /* ── 3. Midnight-anchored precautionary hold ────────────────────────── */
+  // Headline is precise about the MVP split: the hold COMMITMENT is anchored
+  // on Midnight; passport membership against that commitment is resolved by
+  // the RecallLens service (stated again in whyThisLevel + midnight.note).
   if (network.holdActive && network.holdMember && passportValid) {
     return receipt("PROOF_VERIFIED_PRECAUTIONARY_HOLD", "active-hold-membership", {
       ...base,
@@ -364,13 +370,13 @@ export async function classifyScan(
         { field: "product passport", value: input.passport!.passportId.slice(0, 12) + "…" },
         ...(input.lot ? [{ field: "lot", value: input.lot }] : []),
       ],
-      headline: "PROOF-VERIFIED PRECAUTIONARY HOLD",
+      headline: "SIGNED PASSPORT MATCHES A MIDNIGHT-ANCHORED HOLD",
       explanation:
-        "This lot is connected to a private supply lineage currently under investigation. It is not yet an official government recall, and this does not prove the product is contaminated. Do not consume it pending review.",
+        "This signed RecallLens passport matches a precautionary hold whose commitment is anchored on Midnight. The product is still under investigation. This is not an official government recall and does not prove that the product is contaminated.",
       guidance:
-        "Set the product aside. Check back for the official outcome of the investigation.",
+        "Set the product aside and do not consume it while the investigation is pending.",
       whyThisLevel:
-        "Valid passport signature + the passport commitment is a member of an active RecallLens Sentinel hold whose commitment is anchored on Midnight.",
+        "The passport signature was verified on this device; the precautionary-hold commitment is anchored on the local Midnight devnet; RecallLens resolved this passport's membership against that anchored commitment (membership resolution is service-side in this MVP).",
       source: networkSource(network),
       midnight: midnightInfo,
     });
