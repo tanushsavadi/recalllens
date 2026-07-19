@@ -25,3 +25,6 @@ test-results/
 .playwright-mcp/
 .recalllens-workflow.json
 demo-evidence/
+# demo-video production artifacts (footage, audio, renders) — not part of the codebase
+demo-video/
+recall_lens_thumbnail.png
