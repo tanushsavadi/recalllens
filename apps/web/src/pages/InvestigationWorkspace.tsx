@@ -34,15 +34,15 @@ export function InvestigationWorkspace() {
     queryFn: () => api.sentinel.status(DEMO_CASE_ID),
     refetchInterval: 4000,
   });
+  const disclosurePkg = useQuery({
+    queryKey: ["disclosure-package"],
+    queryFn: () => api.investigator.getDisclosurePackage(),
+    refetchInterval: 4000,
+  });
 
   const requestMatch = useMutation({
     mutationFn: (orgId: string) => api.investigator.requestMatch(DEMO_CASE_ID, orgId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["requests", DEMO_CASE_ID] }),
-  });
-
-  const authorizeRecall = useMutation({
-    mutationFn: () => api.investigator.authorizeRecall(DEMO_CASE_ID),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["sentinel", DEMO_CASE_ID] }),
   });
 
   const chain = status.data?.chain;
@@ -57,6 +57,7 @@ export function InvestigationWorkspace() {
     [reqs],
   );
   const holdIssued = !!sentinel.data?.hold;
+  const disclosureReceived = !!disclosurePkg.data?.package;
   const recallAuthorized = !!sentinel.data?.recallAuthorized;
 
   // The investigator's graph shows proofs ANONYMOUSLY (role only, no names).
@@ -182,39 +183,14 @@ export function InvestigationWorkspace() {
       {converged && (
         <div className="grid gap-6 md:grid-cols-2">
           <DisclosureDecryptPanel />
-          <Card className="p-5">
-            <SectionTitle hint="Simulated impact using demonstration supply records">
-              Targeted action
-            </SectionTitle>
-            <RecallImpact />
-            <div className="mt-4">
-              {recallAuthorized ? (
-                <div className="rounded-lg border border-amber-safety/40 bg-amber-bg p-3">
-                  <Badge tone="amber">AUTHORIZED RECALLLENS DEMONSTRATION RECALL</Badge>
-                  <p className="mt-1 text-xs text-slate-600">
-                    The precautionary hold was converted into an authorized
-                    RecallLens demonstration recall
-                    {sentinel.data?.recallAuthorized?.txId
-                      ? ` (tx ${sentinel.data.recallAuthorized.txId.slice(0, 10)}…)`
-                      : ""}
-                    . This is not an FDA recall.
-                  </p>
-                </div>
-              ) : (
-                <button
-                  className="btn btn-primary w-full"
-                  disabled={!holdIssued || authorizeRecall.isPending}
-                  onClick={() => authorizeRecall.mutate()}
-                  title={holdIssued ? "" : "Requires an issued precautionary hold (Sentinel)"}
-                >
-                  {authorizeRecall.isPending ? "Authorizing…" : "Issue targeted confidential hold → authorize recall"}
-                </button>
-              )}
-              {authorizeRecall.isError && (
-                <p className="mt-2 text-xs text-outbreak">{(authorizeRecall.error as Error).message}</p>
-              )}
-            </div>
-          </Card>
+          <RecallActionPanel
+            holdIssued={holdIssued}
+            disclosureReceived={disclosureReceived}
+            recallAuthorized={recallAuthorized}
+            recallTxId={sentinel.data?.recallAuthorized?.txId ?? null}
+            predicateHash={sentinel.data?.recallAuthorized?.predicateHash ?? null}
+            holdCommitment={sentinel.data?.hold?.holdCommitment ?? null}
+          />
         </div>
       )}
 
@@ -242,6 +218,131 @@ export function InvestigationWorkspace() {
   );
 }
 
+/**
+ * Recall authorization — a SEPARATE, explicit action (never combined with
+ * hold issuance, which happens on the Sentinel page). Gated on: trace
+ * convergence + issued hold + received disclosure. Shows the exact predicate
+ * before a confirmation step; the resulting genuine Midnight transaction is
+ * displayed once settled.
+ */
+function RecallActionPanel({
+  holdIssued,
+  disclosureReceived,
+  recallAuthorized,
+  recallTxId,
+  predicateHash,
+  holdCommitment,
+}: {
+  holdIssued: boolean;
+  disclosureReceived: boolean;
+  recallAuthorized: boolean;
+  recallTxId: string | null;
+  predicateHash: string | null;
+  holdCommitment: string | null;
+}) {
+  const qc = useQueryClient();
+  const [reviewing, setReviewing] = useState(false);
+  const authorizeRecall = useMutation({
+    mutationFn: () => api.investigator.authorizeRecall(DEMO_CASE_ID),
+    onSuccess: () => {
+      setReviewing(false);
+      qc.invalidateQueries({ queryKey: ["sentinel", DEMO_CASE_ID] });
+      qc.invalidateQueries({ queryKey: ["workflow-stage", DEMO_CASE_ID] });
+    },
+  });
+
+  const prereqsMet = holdIssued && disclosureReceived;
+
+  return (
+    <Card className="p-5">
+      <SectionTitle hint="Simulated impact using demonstration supply records">
+        Targeted action
+      </SectionTitle>
+      <RecallImpact />
+      <div className="mt-4">
+        {recallAuthorized ? (
+          <div className="rounded-lg border border-amber-safety/40 bg-amber-bg p-3">
+            <Badge tone="amber">AUTHORIZED RECALLLENS DEMONSTRATION RECALL</Badge>
+            <p className="mt-1 text-xs text-slate-600">
+              The recall scope was explicitly authorized
+              {recallTxId ? (
+                <> (genuine Midnight tx <Mono>{truncateHex(recallTxId, 8, 6)}</Mono>)</>
+              ) : (
+                " (fallback mode — no transaction)"
+              )}
+              . This is not an FDA recall.
+            </p>
+            {predicateHash && (
+              <p className="mt-1 text-[11px] text-slate-500">
+                Predicate hash <Mono>{truncateHex(predicateHash, 10, 8)}</Mono>
+              </p>
+            )}
+          </div>
+        ) : reviewing ? (
+          <div className="rounded-lg border border-outbreak/40 bg-outbreak-bg p-3">
+            <div className="text-xs font-bold uppercase tracking-wide text-outbreak">
+              Review the exact recall predicate
+            </div>
+            <dl className="mt-2 space-y-1 text-xs text-slate-700">
+              <div className="flex justify-between gap-3">
+                <dt>Scope</dt>
+                <dd>the passport-commitment set of the active precautionary hold</dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt>Hold commitment</dt>
+                <dd><Mono>{truncateHex(holdCommitment, 10, 8)}</Mono></dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt>Effect</dt>
+                <dd>consumers scanning a matching signed passport see “Matches authorized recall scope”</dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt>Authority</dt>
+                <dd>RecallLens network action — NOT an FDA recall</dd>
+              </div>
+            </dl>
+            <div className="mt-3 flex gap-2">
+              <button
+                className="btn btn-primary flex-1"
+                disabled={authorizeRecall.isPending}
+                onClick={() => authorizeRecall.mutate()}
+              >
+                {authorizeRecall.isPending
+                  ? "Authorizing on Midnight…"
+                  : "Confirm — authorize this recall scope"}
+              </button>
+              <button
+                className="btn btn-glass"
+                disabled={authorizeRecall.isPending}
+                onClick={() => setReviewing(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            <button
+              className="btn btn-primary w-full"
+              disabled={!prereqsMet}
+              onClick={() => setReviewing(true)}
+            >
+              Review recall predicate…
+            </button>
+            <ul className="text-[11px] text-slate-500">
+              <li>{holdIssued ? "✓" : "·"} precautionary hold issued (Sentinel)</li>
+              <li>{disclosureReceived ? "✓" : "·"} encrypted disclosure received from the partner</li>
+            </ul>
+          </div>
+        )}
+        {authorizeRecall.isError && (
+          <p className="mt-2 text-xs text-outbreak">{(authorizeRecall.error as Error).message}</p>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 function RequestRow({ req }: { req: MatchRequest }) {
   const tone =
     req.status === "proven"
@@ -258,14 +359,20 @@ function RequestRow({ req }: { req: MatchRequest }) {
           Credentialed {req.role} <span className="text-xs text-slate-500">(anonymous)</span>
         </div>
         <div className="text-xs text-slate-500">
-          {req.preSubmitted ? "pre-submitted before demo" : "live"}
+          {req.preSubmitted ? "verified during demo setup" : "live"}
         </div>
       </div>
       <div className="text-right">
         <Badge tone={tone}>{req.status}</Badge>
-        {req.txId && (
+        {req.status === "proven" && (
           <div className="mt-1 text-[10px] text-slate-400">
-            tx <Mono>{truncateHex(req.txId, 6, 6)}</Mono>
+            {req.txId ? (
+              <>tx <Mono>{truncateHex(req.txId, 6, 6)}</Mono></>
+            ) : req.preSubmitted ? (
+              "previously verified during demo setup"
+            ) : (
+              "no tx (fallback mode)"
+            )}
           </div>
         )}
       </div>
@@ -315,11 +422,11 @@ function DisclosureDecryptPanel() {
                 }
               }}
             >
-              🔓 Decrypt approved fields (in-browser)
+              Decrypt approved fields (in-browser)
             </button>
           ) : (
             <div className="rounded-lg border border-verified/30 bg-verified-bg p-3">
-              <Badge tone="verified">PROBABLE SOURCE NARROWED</Badge>
+              <Badge tone="verified">RELEVANT SHIPMENT IDENTIFIED</Badge>
               <dl className="mt-2 space-y-1 text-sm">
                 {Object.entries(decrypted).map(([k, v]) => (
                   <div key={k} className="flex justify-between gap-3">
@@ -330,7 +437,7 @@ function DisclosureDecryptPanel() {
               </dl>
               <p className="mt-2 text-[11px] text-slate-500">
                 Only the fields the partner individually approved. This narrows
-                the probable source; it does not prove causation.
+                the trace scope; it does not prove causation or contamination.
               </p>
             </div>
           )}

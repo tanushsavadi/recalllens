@@ -6,6 +6,7 @@ import { LABEL_AFFECTED } from "../labels/label-data";
 import { api, DEMO_CASE_ID } from "../lib/api";
 import { Card, Badge, SectionTitle, Mono, truncateHex } from "../components/ui";
 import { RoleBanner } from "../components/RoleBanner";
+import { ProofProgress } from "../components/ProofProgress";
 import type { SentinelSignal } from "@recalllens/schemas";
 
 /**
@@ -122,6 +123,11 @@ export function Sentinel() {
                   Cancel
                 </button>
               </div>
+              {approve.isPending && (
+                <div className="mt-2">
+                  <ProofProgress kind="signal" />
+                </div>
+              )}
               {approve.isError && (
                 <p className="mt-2 text-xs text-outbreak">{(approve.error as Error).message}</p>
               )}
@@ -193,6 +199,11 @@ export function Sentinel() {
                 >
                   {issueHold.isPending ? "Anchoring hold…" : "Issue confidential precautionary hold"}
                 </button>
+                {issueHold.isPending && (
+                  <div className="mt-2">
+                    <ProofProgress kind="anchor" />
+                  </div>
+                )}
                 {issueHold.isError && (
                   <p className="mt-2 text-xs text-outbreak">{(issueHold.error as Error).message}</p>
                 )}
@@ -205,7 +216,7 @@ export function Sentinel() {
                 <dl className="mt-2 space-y-1 text-xs text-slate-600">
                   <div className="flex justify-between"><dt>Hold commitment</dt><dd><Mono>{truncateHex(hold.holdCommitment, 10, 8)}</Mono></dd></div>
                   <div className="flex justify-between"><dt>Passports in hold set</dt><dd>{hold.memberCount}</dd></div>
-                  <div className="flex justify-between"><dt>Anchor tx</dt><dd>{hold.txId ? <Mono>{truncateHex(hold.txId, 8, 6)}</Mono> : "fallback (no tx)"}</dd></div>
+                  <div className="flex justify-between"><dt>Anchor tx</dt><dd>{hold.txId ? <Mono>{truncateHex(hold.txId, 8, 6)}</Mono> : "fallback mode (no tx)"}</dd></div>
                 </dl>
                 <p className="mt-2 text-[11px] text-slate-500">
                   Matching downstream partners receive confidential hold
@@ -238,10 +249,10 @@ export function Sentinel() {
                   <div key={s.signalId} className="flex justify-between">
                     <span>{s.category}</span>
                     <span>
-                      {s.txId === "(pre-submitted)"
-                        ? "pre-submitted"
-                        : s.txId
-                          ? `tx ${s.txId.slice(0, 10)}…`
+                      {s.txId
+                        ? `tx ${s.txId.slice(0, 10)}…`
+                        : s.preSubmitted
+                          ? "previously verified during demo setup"
                           : "fallback (no tx)"}
                     </span>
                   </div>

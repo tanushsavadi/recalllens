@@ -19,6 +19,7 @@ import {
 } from "../components/ui";
 import { RoleBanner } from "../components/RoleBanner";
 import { ScanProduct } from "../components/ScanProduct";
+import { ProofProgress } from "../components/ProofProgress";
 
 const DISCLOSABLE = ["sourceGln", "lotCode", "eventDate", "destinationGln"] as const;
 type DiscField = (typeof DISCLOSABLE)[number];
@@ -150,9 +151,15 @@ export function PartnerVault() {
                   >
                     {status}
                   </Badge>
-                  {myRequest.txId && (
+                  {status === "proven" && (
                     <span className="text-[10px] text-slate-400">
-                      tx <Mono>{truncateHex(myRequest.txId, 6, 6)}</Mono>
+                      {myRequest.txId ? (
+                        <>tx <Mono>{truncateHex(myRequest.txId, 6, 6)}</Mono></>
+                      ) : myRequest.preSubmitted ? (
+                        "previously verified during demo setup"
+                      ) : (
+                        "no tx (fallback mode)"
+                      )}
                     </span>
                   )}
                 </div>
@@ -210,6 +217,7 @@ export function PartnerVault() {
                         ? "Generating your private proof…"
                         : "Approve and generate private proof"}
                     </button>
+                    {approve.isPending && <ProofProgress />}
                     <button
                       className="btn btn-glass"
                       disabled={approve.isPending}
@@ -241,16 +249,29 @@ export function PartnerVault() {
   );
 }
 
-/** Field-by-field disclosure approval + in-browser encryption. */
+/**
+ * Field-by-field disclosure approval + in-browser encryption.
+ *
+ * Idempotency: the "sent" state is SERVER-DRIVEN (does a package exist for
+ * this case+org?), so a reload can never re-enable the send button. The
+ * server also rejects duplicate sends for the same case+org.
+ */
 function DisclosurePanel({ orgId, proven }: { orgId: string; proven: boolean }) {
+  const qc = useQueryClient();
   const [approved, setApproved] = useState<Record<DiscField, boolean>>({
     sourceGln: true,
     lotCode: true,
     eventDate: true,
     destinationGln: false,
   });
-  const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const existing = useQuery({
+    queryKey: ["disclosure-package"],
+    queryFn: () => api.investigator.getDisclosurePackage(),
+    refetchInterval: 5000,
+  });
+  const sent = existing.data?.package?.orgId === orgId;
 
   const ev = affectedEvents[orgId];
 
@@ -291,7 +312,7 @@ function DisclosurePanel({ orgId, proven }: { orgId: string; proven: boolean }) 
         ciphertextDigest: enc.ciphertextDigest,
         createdAt: new Date().toISOString(),
       });
-      setSent(true);
+      qc.invalidateQueries({ queryKey: ["disclosure-package"] });
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -308,10 +329,25 @@ function DisclosurePanel({ orgId, proven }: { orgId: string; proven: boolean }) 
           verification, never precedes it.
         </p>
       ) : sent ? (
-        <p className="rounded-md bg-verified-bg px-3 py-2 text-xs text-verified-fg">
-          Encrypted package sent. Only ciphertext left this browser; the
-          investigator decrypts the approved fields with their own key.
-        </p>
+        <div className="rounded-md bg-verified-bg px-3 py-2 text-xs text-verified-fg">
+          <div className="font-semibold">Encrypted package sent</div>
+          <p className="mt-1">
+            Only ciphertext left this browser; the investigator decrypts the
+            approved fields with their own key.
+          </p>
+          {existing.data?.package && (
+            <dl className="mt-2 space-y-0.5 text-[11px] text-slate-500">
+              <div className="flex justify-between">
+                <dt>Authorization hash</dt>
+                <dd><Mono>{truncateHex(existing.data.package.authorizationHash, 8, 6)}</Mono></dd>
+              </div>
+              <div className="flex justify-between">
+                <dt>Ciphertext digest</dt>
+                <dd><Mono>{truncateHex(existing.data.package.ciphertextDigest, 8, 6)}</Mono></dd>
+              </div>
+            </dl>
+          )}
+        </div>
       ) : (
         <div className="flex flex-col gap-2">
           {DISCLOSABLE.map((f) => (
@@ -333,7 +369,7 @@ function DisclosurePanel({ orgId, proven }: { orgId: string; proven: boolean }) 
             </label>
           ))}
           <button className="btn btn-primary" onClick={encryptAndSend}>
-            🔐 Encrypt approved fields for the investigator
+            Encrypt approved fields for the investigator
           </button>
           {error && <p className="text-xs text-outbreak">{error}</p>}
           <p className="text-[11px] text-slate-500">
@@ -346,6 +382,11 @@ function DisclosurePanel({ orgId, proven }: { orgId: string; proven: boolean }) 
   );
 }
 
+/**
+ * Removal confirmation — a PARTNER-REPORTED attestation. The evidence basis
+ * comes from the server and is shown verbatim: it is off-chain and not
+ * cryptographically verified, and the UI must never overclaim it.
+ */
 function RemovalPanel({ orgId }: { orgId: string }) {
   const qc = useQueryClient();
   const removal = useQuery({ queryKey: ["removal"], queryFn: api.removal, refetchInterval: 5000 });
@@ -356,17 +397,22 @@ function RemovalPanel({ orgId }: { orgId: string }) {
   const mine = removal.data?.removal?.confirmedBy.includes(orgId) ?? false;
   return (
     <Card className="p-5">
-      <SectionTitle>Removal confirmation</SectionTitle>
+      <SectionTitle hint="off-chain attestation">Removal confirmation</SectionTitle>
       {mine ? (
-        <Badge tone="verified">Quarantine/removal confirmed</Badge>
+        <div>
+          <Badge tone="verified">Partner-reported quarantine/removal</Badge>
+          <p className="mt-2 text-[11px] text-slate-500">
+            {removal.data?.removal?.evidenceBasis}
+          </p>
+        </div>
       ) : (
         <button className="btn btn-glass w-full" onClick={() => confirm.mutate()} disabled={confirm.isPending}>
-          Confirm quarantine / removal of affected inventory
+          Report quarantine / removal of affected inventory
         </button>
       )}
       {removal.data?.removal?.completedAt && (
         <p className="mt-2 text-xs text-verified-fg">
-          All affected partners confirmed removal.
+          All affected partners have reported removal.
         </p>
       )}
     </Card>
